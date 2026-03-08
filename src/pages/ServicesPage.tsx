@@ -3,9 +3,9 @@
 // Фильтрация по категории + поиск + фото услуг
 // =============================================
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { services } from "../data/mock";
+import { services, type Service } from "../data/mock";
 import { PageWrapper, BackButton } from "../components/Layout";
 
 export default function ServicesPage() {
@@ -17,9 +17,30 @@ export default function ServicesPage() {
   );
   const [search, setSearch] = useState("");
 
-  const categories = ["Все"].concat(Array.from(new Set(services.map((s) => s.category))));
+  // Имитация загрузки данных
+  const [data, setData] = useState<Service[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
-  const filtered = services.filter((s) => {
+  const loadData = () => {
+    setLoading(true);
+    setError(false);
+    setTimeout(() => {
+      try {
+        setData(services);
+        setLoading(false);
+      } catch {
+        setError(true);
+        setLoading(false);
+      }
+    }, 800);
+  };
+
+  useEffect(() => { loadData(); }, []);
+
+  const categories = ["Все"].concat(Array.from(new Set(data.map((s) => s.category))));
+
+  const filtered = data.filter((s) => {
     const matchCategory = activeCategory === "Все" || s.category === activeCategory;
     const matchSearch = s.name.toLowerCase().includes(search.toLowerCase());
     return matchCategory && matchSearch;
@@ -66,8 +87,35 @@ export default function ServicesPage() {
         ))}
       </div>
 
+      {/* Загрузка */}
+      {loading && (
+        <div className="text-center py-16">
+          <div className="w-10 h-10 border-4 border-rose-200 border-t-rose-500 rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-400">Загружаем услуги...</p>
+        </div>
+      )}
+
+      {/* Ошибка */}
+      {!loading && error && (
+        <div className="text-center py-16">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <p className="text-gray-600 text-lg mb-2">Не удалось загрузить услуги</p>
+          <p className="text-sm text-gray-400 mb-4">Проверьте соединение и попробуйте снова</p>
+          <button
+            onClick={loadData}
+            className="bg-rose-500 text-white px-6 py-2.5 rounded-xl font-semibold hover:shadow-lg hover:shadow-rose-200 transition-all"
+          >
+            Повторить
+          </button>
+        </div>
+      )}
+
       {/* Список услуг — карточки с фото */}
-      <div className="space-y-4">
+      {!loading && !error && <div className="space-y-4">
         {filtered.map((service) => (
           <div
             key={service.id}
@@ -113,7 +161,7 @@ export default function ServicesPage() {
             <p className="text-sm text-gray-300 mt-1">Попробуйте изменить запрос</p>
           </div>
         )}
-      </div>
+      </div>}
     </PageWrapper>
   );
 }

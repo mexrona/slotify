@@ -207,9 +207,28 @@ export function ConfirmPage() {
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [errors, setErrors] = useState<{ name?: string; phone?: string }>({});
+
+  const validate = () => {
+    const newErrors: { name?: string; phone?: string } = {};
+
+    if (name.trim().length < 2) {
+      newErrors.name = "Имя должно содержать минимум 2 символа";
+    }
+
+    // Убираем всё кроме цифр и проверяем
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length < 11) {
+      newErrors.phone = "Введите номер в формате +7 (XXX) XXX-XX-XX";
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validate()) return;
     navigate("/booking/success");
   };
 
@@ -263,23 +282,23 @@ export function ConfirmPage() {
           <label className="block text-sm font-semibold text-gray-700 mb-1.5">Ваше имя</label>
           <input
             type="text"
-            required
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => { setName(e.target.value); setErrors((prev) => ({ ...prev, name: undefined })); }}
             placeholder="Введите имя"
-            className="w-full border border-gray-200 rounded-xl px-4 py-3 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-rose-400 focus:border-transparent transition-shadow"
+            className={`w-full border rounded-xl px-4 py-3 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-rose-400 focus:border-transparent transition-shadow ${errors.name ? "border-red-400" : "border-gray-200"}`}
           />
+          {errors.name && <p className="text-sm text-red-500 mt-1">{errors.name}</p>}
         </div>
         <div>
           <label className="block text-sm font-semibold text-gray-700 mb-1.5">Телефон</label>
           <input
             type="tel"
-            required
             value={phone}
-            onChange={(e) => setPhone(e.target.value)}
+            onChange={(e) => { setPhone(e.target.value); setErrors((prev) => ({ ...prev, phone: undefined })); }}
             placeholder="+7 (___) ___-__-__"
-            className="w-full border border-gray-200 rounded-xl px-4 py-3 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-rose-400 focus:border-transparent transition-shadow"
+            className={`w-full border rounded-xl px-4 py-3 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-rose-400 focus:border-transparent transition-shadow ${errors.phone ? "border-red-400" : "border-gray-200"}`}
           />
+          {errors.phone && <p className="text-sm text-red-500 mt-1">{errors.phone}</p>}
         </div>
         <button
           type="submit"
