@@ -246,7 +246,7 @@ def get_current_user(authorization: str | None) -> dict | None:
 
     conn = get_db()
     row = conn.execute(
-        "SELECT u.* FROM users u JOIN tokens t ON u.id = t.user_id WHERE t.token = ?",
+        "SELECT * FROM users WHERE token = ?",
         (token,),
     ).fetchone()
     conn.close()
@@ -304,7 +304,7 @@ def register(data: UserRegister):
     user_id = cur.lastrowid
 
     token = uuid.uuid4().hex
-    conn.execute("INSERT INTO tokens (token, user_id) VALUES (?, ?)", (token, user_id))
+    conn.execute("UPDATE users SET token = ? WHERE id = ?", (token, user_id))
     conn.commit()
 
     user = row_to_dict(conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone())
@@ -324,7 +324,7 @@ def login(data: UserLogin):
         raise HTTPException(status_code=404, detail="Пользователь не найден")
 
     token = uuid.uuid4().hex
-    conn.execute("INSERT INTO tokens (token, user_id) VALUES (?, ?)", (token, user["id"]))
+    conn.execute("UPDATE users SET token = ? WHERE id = ?", (token, user["id"]))
     conn.commit()
     result = {**dict(user), "token": token}
     conn.close()
@@ -646,19 +646,19 @@ def get_my_bookings(
 
     if user:
         if user["role"] == "admin":
-            rows = conn.execute("SELECT * FROM bookings").fetchall()
+            rows = conn.execute("SELECT * FROM bookings ORDER BY date, time").fetchall()
         elif user["role"] == "master":
             # Ищем master_id по user_id
             master = conn.execute("SELECT id FROM masters WHERE user_id = ?", (user["id"],)).fetchone()
             if master:
-                rows = conn.execute("SELECT * FROM bookings WHERE master_id = ?", (master["id"],)).fetchall()
+                rows = conn.execute("SELECT * FROM bookings WHERE master_id = ? ORDER BY date, time", (master["id"],)).fetchall()
             else:
                 rows = []
         else:
-            rows = conn.execute("SELECT * FROM bookings WHERE user_id = ?", (user["id"],)).fetchall()
+            rows = conn.execute("SELECT * FROM bookings WHERE user_id = ? ORDER BY date, time", (user["id"],)).fetchall()
     elif phone:
         normalized = normalize_phone(phone)
-        rows = conn.execute("SELECT * FROM bookings WHERE client_phone = ?", (normalized,)).fetchall()
+        rows = conn.execute("SELECT * FROM bookings WHERE client_phone = ? ORDER BY date, time", (normalized,)).fetchall()
     else:
         rows = []
 

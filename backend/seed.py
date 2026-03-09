@@ -15,7 +15,6 @@ def seed():
     # Очищаем таблицы (порядок важен из-за внешних ключей)
     # Очищаем все таблицы и сбрасываем счётчики ID
     cur.executescript("""
-        DELETE FROM tokens;
         DELETE FROM bookings;
         DELETE FROM master_portfolio;
         DELETE FROM masters;
@@ -86,16 +85,6 @@ def seed():
     cur.executemany(
         "INSERT INTO master_portfolio (master_id, image_url, position) VALUES (?, ?, ?)",
         portfolio,
-    )
-
-    # --- Записи ---
-    bookings = [
-        (1, 1, 2, "2026-03-12", "14:00", "Клиент", "+79991234567", "upcoming"),
-        (4, 2, 2, "2026-02-20", "11:00", "Клиент", "+79991234567", "past"),
-    ]
-    cur.executemany(
-        "INSERT INTO bookings (service_id, master_id, user_id, date, time, client_name, client_phone, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        bookings,
     )
 
     conn.commit()

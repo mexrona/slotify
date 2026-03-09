@@ -37,13 +37,8 @@ def init_db():
             name       TEXT    NOT NULL CHECK(length(name) >= 2),
             role       TEXT    NOT NULL DEFAULT 'client'
                                CHECK(role IN ('client', 'master', 'admin')),
+            token      TEXT,
             created_at TEXT    NOT NULL DEFAULT (datetime('now'))
-        );
-
-        -- Токены авторизации
-        CREATE TABLE IF NOT EXISTS tokens (
-            token   TEXT    PRIMARY KEY,
-            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE
         );
 
         -- Услуги салона
