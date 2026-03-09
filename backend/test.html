@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Slotify API — Тестовая панель</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f8f8f8; color: #333; padding: 24px; }
+    h1 { font-size: 24px; margin-bottom: 8px; }
+    .subtitle { color: #888; margin-bottom: 24px; font-size: 14px; }
+
+    /* Секции */
+    .section { background: #fff; border: 1px solid #e5e5e5; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+    .section h2 { font-size: 16px; margin-bottom: 12px; color: #f43f5e; }
+
+    /* Кнопки */
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    button {
+      padding: 8px 16px; border: none; border-radius: 8px; font-size: 13px;
+      font-weight: 600; cursor: pointer; transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.8; }
+    .btn-get { background: #dbeafe; color: #1d4ed8; }
+    .btn-post { background: #d1fae5; color: #065f46; }
+    .btn-put { background: #fef3c7; color: #92400e; }
+    .btn-delete { background: #fee2e2; color: #991b1b; }
+    .btn-patch { background: #ede9fe; color: #5b21b6; }
+
+    /* Поля ввода */
+    .inputs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    input, select {
+      padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px;
+      font-size: 13px; width: 200px;
+    }
+    input:focus, select:focus { outline: none; border-color: #f43f5e; }
+    label { font-size: 12px; color: #666; display: block; margin-bottom: 2px; }
+    .field { display: flex; flex-direction: column; }
+
+    /* Результат */
+    .result {
+      background: #1e1e1e; color: #d4d4d4; border-radius: 8px;
+      padding: 16px; font-family: 'Consolas', monospace; font-size: 12px;
+      max-height: 300px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+      display: none;
+    }
+    .result.visible { display: block; }
+    .status { font-size: 12px; margin-bottom: 8px; font-weight: 600; }
+    .status.ok { color: #16a34a; }
+    .status.err { color: #dc2626; }
+
+    /* Токен-бар */
+    .token-bar {
+      background: #fffbeb; border: 1px solid #fcd34d; border-radius: 12px;
+      padding: 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    .token-bar input { flex: 1; min-width: 200px; }
+    .token-bar span { font-size: 13px; font-weight: 600; color: #92400e; }
+  </style>
+</head>
+<body>
+
+<h1>Slotify API — Тестовая панель</h1>
+<p class="subtitle">Нажимай кнопки — результат появится внизу каждой секции</p>
+
+<!-- Токен -->
+<div class="token-bar">
+  <span>Токен:</span>
+  <input type="text" id="token" placeholder="Вставь токен после регистрации или логина">
+</div>
+
+<!-- ============ Авторизация ============ -->
+<div class="section">
+  <h2>Авторизация</h2>
+  <div class="inputs">
+    <div class="field">
+      <label>Телефон</label>
+      <input type="text" id="auth-phone" value="+7 999 111-22-33">
+    </div>
+    <div class="field">
+      <label>Имя</label>
+      <input type="text" id="auth-name" value="Тестовый">
+    </div>
+  </div>
+  <div class="actions">
+    <button class="btn-post" onclick="doRegister()">Регистрация</button>
+    <button class="btn-post" onclick="doLogin()">Вход</button>
+    <button class="btn-get" onclick="doMe()">Кто я? (GET /auth/me)</button>
+  </div>
+  <div class="status" id="auth-status"></div>
+  <div class="result" id="auth-result"></div>
+</div>
+
+<!-- ============ Услуги ============ -->
+<div class="section">
+  <h2>Услуги</h2>
+  <div class="inputs">
+    <div class="field">
+      <label>ID (для получения/изменения/удаления)</label>
+      <input type="number" id="service-id" value="1">
+    </div>
+  </div>
+  <div class="actions">
+    <button class="btn-get" onclick="getServices()">Получить все</button>
+    <button class="btn-get" onclick="getService()">Получить по ID</button>
+    <button class="btn-post" onclick="createService()">Создать</button>
+    <button class="btn-put" onclick="updateService()">Обновить</button>
+    <button class="btn-delete" onclick="deleteService()">Удалить</button>
+  </div>
+  <div class="status" id="services-status"></div>
+  <div class="result" id="services-result"></div>
+</div>
+
+<!-- ============ Мастера ============ -->
+<div class="section">
+  <h2>Мастера</h2>
+  <div class="inputs">
+    <div class="field">
+      <label>ID (для получения/изменения/удаления)</label>
+      <input type="number" id="master-id" value="1">
+    </div>
+  </div>
+  <div class="actions">
+    <button class="btn-get" onclick="getMasters()">Получить всех</button>
+    <button class="btn-get" onclick="getMaster()">Получить по ID</button>
+    <button class="btn-post" onclick="createMaster()">Создать</button>
+    <button class="btn-put" onclick="updateMaster()">Обновить</button>
+    <button class="btn-delete" onclick="deleteMaster()">Удалить</button>
+  </div>
+  <div class="status" id="masters-status"></div>
+  <div class="result" id="masters-result"></div>
+</div>
+
+<!-- ============ Слоты ============ -->
+<div class="section">
+  <h2>Слоты времени</h2>
+  <div class="inputs">
+    <div class="field">
+      <label>ID мастера</label>
+      <input type="number" id="slot-master" value="1">
+    </div>
+    <div class="field">
+      <label>Дата</label>
+      <input type="date" id="slot-date" value="2026-03-12">
+    </div>
+  </div>
+  <div class="actions">
+    <button class="btn-get" onclick="getSlots()">Получить слоты</button>
+  </div>
+  <div class="status" id="slots-status"></div>
+  <div class="result" id="slots-result"></div>
+</div>
+
+<!-- ============ Записи ============ -->
+<div class="section">
+  <h2>Записи</h2>
+  <div class="inputs">
+    <div class="field">
+      <label>ID услуги</label>
+      <input type="number" id="booking-service" value="1">
+    </div>
+    <div class="field">
+      <label>ID мастера (0 = любой)</label>
+      <input type="number" id="booking-master" value="1">
+    </div>
+    <div class="field">
+      <label>Дата</label>
+      <input type="date" id="booking-date" value="2026-03-20">
+    </div>
+    <div class="field">
+      <label>Время</label>
+      <input type="text" id="booking-time" value="10:00">
+    </div>
+    <div class="field">
+      <label>Имя клиента</label>
+      <input type="text" id="booking-name" value="Алексей">
+    </div>
+    <div class="field">
+      <label>Телефон клиента</label>
+      <input type="text" id="booking-phone" value="+7 999 111-22-33">
+    </div>
+    <div class="field">
+      <label>ID записи (для отмены)</label>
+      <input type="number" id="booking-id" value="1">
+    </div>
+  </div>
+  <div class="actions">
+    <button class="btn-post" onclick="createBooking()">Создать запись</button>
+    <button class="btn-get" onclick="getMyBookings()">Мои записи</button>
+    <button class="btn-get" onclick="getAllBookings()">Все записи (admin)</button>
+    <button class="btn-get" onclick="getBooking()">Получить по ID</button>
+    <button class="btn-patch" onclick="cancelBooking()">Отменить запись</button>
+  </div>
+  <div class="status" id="bookings-status"></div>
+  <div class="result" id="bookings-result"></div>
+</div>
+
+<script>
+  // Автоматически берём адрес сервера, на котором открыта страница
+  const API = window.location.origin;
+
+  // --- Общая функция запроса ---
+  async function api(method, path, body, sectionId) {
+    const statusEl = document.getElementById(sectionId + "-status");
+    const resultEl = document.getElementById(sectionId + "-result");
+    const token = document.getElementById("token").value.trim();
+
+    const headers = { "Content-Type": "application/json" };
+    if (token) headers["Authorization"] = "Bearer " + token;
+
+    try {
+      const resp = await fetch(API + path, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+
+      const text = await resp.text();
+      let data;
+      try { data = JSON.parse(text); } catch { data = text; }
+
+      const ok = resp.ok;
+      statusEl.textContent = method + " " + path + " → " + resp.status + " " + resp.statusText;
+      statusEl.className = "status " + (ok ? "ok" : "err");
+      resultEl.textContent = JSON.stringify(data, null, 2);
+      resultEl.className = "result visible";
+
+      return data;
+    } catch (err) {
+      statusEl.textContent = "Ошибка сети: " + err.message;
+      statusEl.className = "status err";
+      resultEl.textContent = err.message;
+      resultEl.className = "result visible";
+    }
+  }
+
+  // --- Авторизация ---
+  async function doRegister() {
+    const phone = document.getElementById("auth-phone").value;
+    const name = document.getElementById("auth-name").value;
+    const data = await api("POST", "/auth/register", { phone, name }, "auth");
+    if (data && data.token) document.getElementById("token").value = data.token;
+  }
+
+  async function doLogin() {
+    const phone = document.getElementById("auth-phone").value;
+    const data = await api("POST", "/auth/login", { phone }, "auth");
+    if (data && data.token) document.getElementById("token").value = data.token;
+  }
+
+  function doMe() { api("GET", "/auth/me", null, "auth"); }
+
+  // --- Услуги ---
+  function getServices() { api("GET", "/services", null, "services"); }
+
+  function getService() {
+    const id = document.getElementById("service-id").value;
+    api("GET", "/services/" + id, null, "services");
+  }
+
+  function createService() {
+    api("POST", "/services", {
+      name: "Тестовая услуга",
+      category: "Тест",
+      duration: 30,
+      price: 999,
+      description: "Создана через тестовую панель",
+      image: "https://via.placeholder.com/400x300"
+    }, "services");
+  }
+
+  function updateService() {
+    const id = document.getElementById("service-id").value;
+    api("PUT", "/services/" + id, {
+      name: "Обновлённая услуга",
+      category: "Тест",
+      duration: 45,
+      price: 1999,
+      description: "Обновлена через тестовую панель",
+      image: "https://via.placeholder.com/400x300"
+    }, "services");
+  }
+
+  function deleteService() {
+    const id = document.getElementById("service-id").value;
+    api("DELETE", "/services/" + id, null, "services");
+  }
+
+  // --- Мастера ---
+  function getMasters() { api("GET", "/masters", null, "masters"); }
+
+  function getMaster() {
+    const id = document.getElementById("master-id").value;
+    api("GET", "/masters/" + id, null, "masters");
+  }
+
+  function createMaster() {
+    api("POST", "/masters", {
+      name: "Тестовый мастер",
+      photo: "https://i.pravatar.cc/150?img=20",
+      specialization: "Тестовая специализация",
+      rating: 4.5,
+      experience: "3 года опыта",
+      portfolio: []
+    }, "masters");
+  }
+
+  function updateMaster() {
+    const id = document.getElementById("master-id").value;
+    api("PUT", "/masters/" + id, {
+      name: "Обновлённый мастер",
+      photo: "https://i.pravatar.cc/150?img=20",
+      specialization: "Новая специализация",
+      rating: 5.0,
+      experience: "10 лет опыта",
+      portfolio: []
+    }, "masters");
+  }
+
+  function deleteMaster() {
+    const id = document.getElementById("master-id").value;
+    api("DELETE", "/masters/" + id, null, "masters");
+  }
+
+  // --- Слоты ---
+  function getSlots() {
+    const masterId = document.getElementById("slot-master").value;
+    const date = document.getElementById("slot-date").value;
+    api("GET", "/slots?master_id=" + masterId + "&date=" + date, null, "slots");
+  }
+
+  // --- Записи ---
+  function createBooking() {
+    api("POST", "/bookings", {
+      service_id: +document.getElementById("booking-service").value,
+      master_id: +document.getElementById("booking-master").value,
+      date: document.getElementById("booking-date").value,
+      time: document.getElementById("booking-time").value,
+      client_name: document.getElementById("booking-name").value,
+      client_phone: document.getElementById("booking-phone").value,
+    }, "bookings");
+  }
+
+  function getMyBookings() { api("GET", "/bookings/my", null, "bookings"); }
+  function getAllBookings() { api("GET", "/bookings", null, "bookings"); }
+
+  function getBooking() {
+    const id = document.getElementById("booking-id").value;
+    api("GET", "/bookings/" + id, null, "bookings");
+  }
+
+  function cancelBooking() {
+    const id = document.getElementById("booking-id").value;
+    api("PATCH", "/bookings/" + id + "/cancel", null, "bookings");
+  }
+</script>
+
+</body>
+</html>

@@ -3,9 +3,9 @@
 // 1) Выбор мастера  2) Дата и время  3) Подтверждение
 // =============================================
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { services, masters, generateTimeSlots, type TimeSlot } from "../data/mock";
+import { type Service, type Master, type TimeSlot } from "../data/mock";
 import { PageWrapper, BookingSteps, BackButton } from "../components/Layout";
 
 // ==================== ШАГ 1: Выбор мастера ====================
@@ -13,11 +13,64 @@ export function MasterPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const serviceId = Number(searchParams.get("service"));
-  const service = services.find((s) => s.id === serviceId);
+
+  const [service, setService] = useState<Service | null>(null);
+  const [masters, setMasters] = useState<Master[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    setError(false);
+
+    Promise.all([
+      fetch(`/api/services/${serviceId}`).then((r) => { if (!r.ok) throw new Error(); return r.json(); }),
+      fetch("/api/masters").then((r) => { if (!r.ok) throw new Error(); return r.json(); }),
+    ])
+      .then(([serviceData, mastersData]) => {
+        setService(serviceData);
+        setMasters(mastersData);
+        setLoading(false);
+      })
+      .catch(() => {
+        setError(true);
+        setLoading(false);
+      });
+  }, [serviceId]);
 
   const selectMaster = (masterId: number) => {
     navigate(`/booking/datetime?service=${serviceId}&master=${masterId}`);
   };
+
+  if (loading) {
+    return (
+      <PageWrapper>
+        <div className="text-center py-20">
+          <div className="w-10 h-10 border-4 border-rose-200 border-t-rose-500 rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-400">Загружаем мастеров...</p>
+        </div>
+      </PageWrapper>
+    );
+  }
+
+  if (error) {
+    return (
+      <PageWrapper>
+        <BackButton onClick={() => navigate(-1)} />
+        <div className="text-center py-16">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <p className="text-gray-600 text-lg mb-2">Не удалось загрузить данные</p>
+          <button onClick={() => window.location.reload()} className="bg-rose-500 text-white px-6 py-2.5 rounded-xl font-semibold hover:shadow-lg hover:shadow-rose-200 transition-all">
+            Повторить
+          </button>
+        </div>
+      </PageWrapper>
+    );
+  }
 
   return (
     <PageWrapper>
@@ -113,8 +166,28 @@ export function DateTimePage() {
   const [selectedDate, setSelectedDate] = useState<string>(
     dates[0].toISOString().split("T")[0]
   );
-  const [slots] = useState<TimeSlot[]>(generateTimeSlots());
+  const [slots, setSlots] = useState<TimeSlot[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(true);
+  const [slotsError, setSlotsError] = useState(false);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
+
+  // Загружаем слоты при смене даты или мастера
+  useEffect(() => {
+    setSlotsLoading(true);
+    setSlotsError(false);
+    setSelectedTime(null);
+
+    fetch(`/api/slots?master_id=${masterId}&date=${selectedDate}`)
+      .then((r) => { if (!r.ok) throw new Error(); return r.json(); })
+      .then((data) => {
+        setSlots(data);
+        setSlotsLoading(false);
+      })
+      .catch(() => {
+        setSlotsError(true);
+        setSlotsLoading(false);
+      });
+  }, [selectedDate, masterId]);
 
   const formatDate = (d: Date) => {
     const days = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
@@ -165,24 +238,43 @@ export function DateTimePage() {
 
       {/* Сетка слотов */}
       <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Доступное время</h3>
-      <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 mb-8">
-        {slots.map((slot) => (
-          <button
-            key={slot.time}
-            disabled={!slot.available}
-            onClick={() => setSelectedTime(slot.time)}
-            className={`py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
-              !slot.available
-                ? "bg-gray-50 text-gray-300 cursor-not-allowed line-through"
-                : selectedTime === slot.time
-                  ? "bg-rose-500 text-white shadow-md shadow-rose-200"
-                  : "bg-white border border-gray-200 hover:border-rose-300 hover:text-rose-600 text-gray-700"
-            }`}
-          >
-            {slot.time}
+
+      {slotsLoading && (
+        <div className="text-center py-10">
+          <div className="w-8 h-8 border-4 border-rose-200 border-t-rose-500 rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-gray-400 text-sm">Загружаем слоты...</p>
+        </div>
+      )}
+
+      {!slotsLoading && slotsError && (
+        <div className="text-center py-10">
+          <p className="text-red-400 mb-2">Не удалось загрузить слоты</p>
+          <button onClick={() => setSelectedDate(selectedDate)} className="text-rose-500 font-semibold text-sm">
+            Повторить
           </button>
-        ))}
-      </div>
+        </div>
+      )}
+
+      {!slotsLoading && !slotsError && (
+        <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 mb-8">
+          {slots.map((slot) => (
+            <button
+              key={slot.time}
+              disabled={!slot.available}
+              onClick={() => setSelectedTime(slot.time)}
+              className={`py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                !slot.available
+                  ? "bg-gray-50 text-gray-300 cursor-not-allowed line-through"
+                  : selectedTime === slot.time
+                    ? "bg-rose-500 text-white shadow-md shadow-rose-200"
+                    : "bg-white border border-gray-200 hover:border-rose-300 hover:text-rose-600 text-gray-700"
+              }`}
+            >
+              {slot.time}
+            </button>
+          ))}
+        </div>
+      )}
 
       <button
         onClick={confirmTime}
@@ -200,14 +292,38 @@ export function ConfirmPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  const service = services.find((s) => s.id === Number(searchParams.get("service")));
-  const master = masters.find((m) => m.id === Number(searchParams.get("master")));
+  const serviceId = Number(searchParams.get("service"));
+  const masterId = Number(searchParams.get("master"));
   const date = searchParams.get("date") || "";
   const time = searchParams.get("time") || "";
+
+  const [service, setService] = useState<Service | null>(null);
+  const [master, setMaster] = useState<Master | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [errors, setErrors] = useState<{ name?: string; phone?: string }>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+
+  // Загружаем данные об услуге и мастере
+  useEffect(() => {
+    const fetches = [
+      fetch(`/api/services/${serviceId}`).then((r) => r.ok ? r.json() : null),
+    ];
+    if (masterId > 0) {
+      fetches.push(fetch(`/api/masters/${masterId}`).then((r) => r.ok ? r.json() : null));
+    }
+
+    Promise.all(fetches)
+      .then(([serviceData, masterData]) => {
+        setService(serviceData);
+        setMaster(masterData || null);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [serviceId, masterId]);
 
   const validate = () => {
     const newErrors: { name?: string; phone?: string } = {};
@@ -216,7 +332,6 @@ export function ConfirmPage() {
       newErrors.name = "Имя должно содержать минимум 2 символа";
     }
 
-    // Убираем всё кроме цифр и проверяем
     const digits = phone.replace(/\D/g, "");
     if (digits.length < 11) {
       newErrors.phone = "Введите номер в формате +7 (XXX) XXX-XX-XX";
@@ -229,8 +344,46 @@ export function ConfirmPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
-    navigate("/booking/success");
+
+    setSubmitting(true);
+    setSubmitError("");
+
+    fetch("/api/bookings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        service_id: serviceId,
+        master_id: masterId,
+        date,
+        time,
+        client_name: name.trim(),
+        client_phone: phone,
+      }),
+    })
+      .then((r) => {
+        if (!r.ok) return r.json().then((err) => { throw new Error(err.detail || "Ошибка"); });
+        return r.json();
+      })
+      .then(() => {
+        // Сохраняем телефон, чтобы потом найти «мои записи»
+        localStorage.setItem("slotify_phone", phone);
+        navigate("/booking/success");
+      })
+      .catch((err) => {
+        setSubmitError(err.message || "Не удалось создать запись");
+        setSubmitting(false);
+      });
   };
+
+  if (loading) {
+    return (
+      <PageWrapper>
+        <div className="text-center py-20">
+          <div className="w-10 h-10 border-4 border-rose-200 border-t-rose-500 rounded-full animate-spin mx-auto mb-4" />
+        </div>
+      </PageWrapper>
+    );
+  }
 
   return (
     <PageWrapper>
@@ -276,6 +429,13 @@ export function ConfirmPage() {
         </div>
       </div>
 
+      {/* Ошибка отправки */}
+      {submitError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+          <p className="text-red-600 text-sm">{submitError}</p>
+        </div>
+      )}
+
       {/* Форма */}
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
@@ -302,9 +462,10 @@ export function ConfirmPage() {
         </div>
         <button
           type="submit"
-          className="w-full bg-rose-500 text-white py-3.5 rounded-2xl font-bold shadow-lg shadow-rose-200 hover:shadow-xl hover:scale-[1.01] transition-all duration-200"
+          disabled={submitting}
+          className="w-full bg-rose-500 text-white py-3.5 rounded-2xl font-bold shadow-lg shadow-rose-200 hover:shadow-xl hover:scale-[1.01] disabled:bg-gray-300 disabled:shadow-none transition-all duration-200"
         >
-          Подтвердить запись
+          {submitting ? "Отправляем..." : "Подтвердить запись"}
         </button>
       </form>
     </PageWrapper>

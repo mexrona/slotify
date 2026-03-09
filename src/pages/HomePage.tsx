@@ -3,14 +3,40 @@
 // Баннер + категории + галерея работ мастеров
 // =============================================
 
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { services, masters } from "../data/mock";
+import { type Service, type Master } from "../data/mock";
 import { PageWrapper } from "../components/Layout";
 
 export default function HomePage() {
+  const [services, setServices] = useState<Service[]>([]);
+  const [masters, setMasters] = useState<Master[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  const loadData = () => {
+    setLoading(true);
+    setError(false);
+
+    Promise.all([
+      fetch("/api/services").then((r) => { if (!r.ok) throw new Error(); return r.json(); }),
+      fetch("/api/masters").then((r) => { if (!r.ok) throw new Error(); return r.json(); }),
+    ])
+      .then(([servicesData, mastersData]) => {
+        setServices(servicesData);
+        setMasters(mastersData);
+        setLoading(false);
+      })
+      .catch(() => {
+        setError(true);
+        setLoading(false);
+      });
+  };
+
+  useEffect(() => { loadData(); }, []);
+
   const categories = Array.from(new Set(services.map((s) => s.category)));
 
-  // Иконки категорий
   // Тематические фото для категорий (Unsplash)
   const categoryIcons: Record<string, string> = {
     "Стрижки": "https://images.unsplash.com/photo-1560066984-138dadb4c035?w=400&h=250&fit=crop",
@@ -18,6 +44,37 @@ export default function HomePage() {
     "Косметология": "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=400&h=250&fit=crop",
     "Ресницы и брови": "https://images.unsplash.com/photo-1633465631144-aa321b66d44a?w=400&h=250&fit=crop",
   };
+
+  // Загрузка
+  if (loading) {
+    return (
+      <PageWrapper>
+        <div className="text-center py-20">
+          <div className="w-10 h-10 border-4 border-rose-200 border-t-rose-500 rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-400">Загружаем...</p>
+        </div>
+      </PageWrapper>
+    );
+  }
+
+  // Ошибка
+  if (error) {
+    return (
+      <PageWrapper>
+        <div className="text-center py-20">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <p className="text-gray-600 text-lg mb-2">Не удалось загрузить данные</p>
+          <button onClick={loadData} className="bg-rose-500 text-white px-6 py-2.5 rounded-xl font-semibold hover:shadow-lg hover:shadow-rose-200 transition-all">
+            Повторить
+          </button>
+        </div>
+      </PageWrapper>
+    );
+  }
 
   return (
     <PageWrapper>

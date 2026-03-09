@@ -5,7 +5,7 @@
 
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { services, type Service } from "../data/mock";
+import { type Service } from "../data/mock";
 import { PageWrapper, BackButton } from "../components/Layout";
 
 export default function ServicesPage() {
@@ -17,7 +17,6 @@ export default function ServicesPage() {
   );
   const [search, setSearch] = useState("");
 
-  // Имитация загрузки данных
   const [data, setData] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -25,15 +24,19 @@ export default function ServicesPage() {
   const loadData = () => {
     setLoading(true);
     setError(false);
-    setTimeout(() => {
-      try {
+    fetch("/api/services")
+      .then((res) => {
+        if (!res.ok) throw new Error("Ошибка загрузки");
+        return res.json();
+      })
+      .then((services) => {
         setData(services);
         setLoading(false);
-      } catch {
+      })
+      .catch(() => {
         setError(true);
         setLoading(false);
-      }
-    }, 800);
+      });
   };
 
   useEffect(() => { loadData(); }, []);

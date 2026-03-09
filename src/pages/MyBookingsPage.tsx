@@ -3,26 +3,71 @@
 // Табы: Предстоящие / Прошедшие
 // =============================================
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { myBookings } from "../data/mock";
+import { type Service, type Master } from "../data/mock";
 import { PageWrapper, BackButton } from "../components/Layout";
+
+// Тип записи, как приходит с API
+interface BookingItem {
+  id: number;
+  service: Service;
+  master: Master | null;
+  date: string;
+  time: string;
+  status: string;
+}
 
 export default function MyBookingsPage() {
   const navigate = useNavigate();
   const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
   const [cancelId, setCancelId] = useState<number | null>(null);
-  // Локальная копия записей, чтобы можно было удалять
-  const [bookings, setBookings] = useState(myBookings);
+
+  const [bookings, setBookings] = useState<BookingItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  const loadBookings = () => {
+    setLoading(true);
+    setError(false);
+
+    // Ищем записи по телефону, сохранённому при бронировании
+    const phone = localStorage.getItem("slotify_phone") || "";
+    fetch(`/api/bookings/my?phone=${encodeURIComponent(phone)}`)
+      .then((r) => {
+        if (!r.ok) throw new Error();
+        return r.json();
+      })
+      .then((data) => {
+        setBookings(data);
+        setLoading(false);
+      })
+      .catch(() => {
+        setError(true);
+        setLoading(false);
+      });
+  };
+
+  useEffect(() => { loadBookings(); }, []);
 
   const filtered = bookings.filter((b) =>
     tab === "upcoming" ? b.status === "upcoming" : b.status === "past"
   );
 
-  // Удаляет запись из локального списка
+  // Отменяет запись через API
   const confirmCancel = () => {
-    setBookings((prev) => prev.filter((b) => b.id !== cancelId));
-    setCancelId(null);
+    if (!cancelId) return;
+
+    fetch(`/api/bookings/${cancelId}/cancel`, { method: "PATCH" })
+      .then((r) => {
+        if (!r.ok) throw new Error();
+        // Убираем из списка или обновляем статус
+        setBookings((prev) => prev.filter((b) => b.id !== cancelId));
+        setCancelId(null);
+      })
+      .catch(() => {
+        setCancelId(null);
+      });
   };
 
   return (
@@ -54,8 +99,31 @@ export default function MyBookingsPage() {
         </button>
       </div>
 
+      {/* Загрузка */}
+      {loading && (
+        <div className="text-center py-16">
+          <div className="w-10 h-10 border-4 border-rose-200 border-t-rose-500 rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-400">Загружаем записи...</p>
+        </div>
+      )}
+
+      {/* Ошибка */}
+      {!loading && error && (
+        <div className="text-center py-16">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <p className="text-gray-600 text-lg mb-2">Не удалось загрузить записи</p>
+          <button onClick={loadBookings} className="bg-rose-500 text-white px-6 py-2.5 rounded-xl font-semibold hover:shadow-lg hover:shadow-rose-200 transition-all">
+            Повторить
+          </button>
+        </div>
+      )}
+
       {/* Список */}
-      {filtered.length > 0 ? (
+      {!loading && !error && filtered.length > 0 && (
         <div className="space-y-4">
           {filtered.map((booking) => (
             <div
@@ -65,17 +133,19 @@ export default function MyBookingsPage() {
               <div className="p-5">
                 <div className="flex justify-between items-start">
                   <div className="flex items-start gap-3">
-                    <img
-                      src={booking.master.photo}
-                      alt={booking.master.name}
-                      className="w-12 h-12 rounded-xl object-cover ring-2 ring-gray-100"
-                    />
+                    {booking.master && (
+                      <img
+                        src={booking.master.photo}
+                        alt={booking.master.name}
+                        className="w-12 h-12 rounded-xl object-cover ring-2 ring-gray-100"
+                      />
+                    )}
                     <div>
                       <h3 className="font-bold text-gray-800">
                         {booking.service.name}
                       </h3>
                       <p className="text-sm text-gray-500">
-                        {booking.master.name}
+                        {booking.master?.name || "Любой мастер"}
                       </p>
                     </div>
                   </div>
@@ -112,7 +182,10 @@ export default function MyBookingsPage() {
             </div>
           ))}
         </div>
-      ) : (
+      )}
+
+      {/* Пустой список */}
+      {!loading && !error && filtered.length === 0 && (
         <div className="text-center py-16">
           <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-5">
             <svg className="w-10 h-10 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -124,12 +197,14 @@ export default function MyBookingsPage() {
               ? "У вас нет предстоящих записей"
               : "У вас пока нет прошедших записей"}
           </p>
-          <Link
-            to="/services"
-            className="inline-block mt-4 bg-rose-500 text-white px-6 py-3 rounded-2xl font-semibold shadow-lg shadow-rose-200 hover:shadow-xl hover:scale-105 transition-all duration-200"
-          >
-            Записаться
-          </Link>
+          {tab === "upcoming" && (
+            <Link
+              to="/services"
+              className="inline-block mt-4 bg-rose-500 text-white px-6 py-3 rounded-2xl font-semibold shadow-lg shadow-rose-200 hover:shadow-xl hover:scale-105 transition-all duration-200"
+            >
+              Записаться
+            </Link>
+          )}
         </div>
       )}
 
