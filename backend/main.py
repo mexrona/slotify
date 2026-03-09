@@ -1,6 +1,6 @@
 # =============================================
 # Slotify — бэкенд на FastAPI
-# Данные хранятся в памяти (без базы данных)
+# Данные хранятся в SQLite (файл slotify.db)
 # =============================================
 
 import os
@@ -15,6 +15,8 @@ from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, field_validator
+
+from database import get_db, init_db
 
 load_dotenv()
 
@@ -39,6 +41,28 @@ def test_page():
     """Тестовая панель для проверки API."""
     html_path = Path(__file__).parent / "test.html"
     return html_path.read_text(encoding="utf-8")
+
+
+# =============================================
+# Создание таблиц и админа при старте
+# =============================================
+
+init_db()
+
+def create_admin():
+    """Создаёт администратора, если его ещё нет."""
+    admin_phone = normalize_phone(os.getenv("ADMIN_PHONE", "+70000000000"))
+    admin_name = os.getenv("ADMIN_NAME", "Админ")
+
+    conn = get_db()
+    existing = conn.execute("SELECT id FROM users WHERE role = 'admin'").fetchone()
+    if not existing:
+        conn.execute(
+            "INSERT OR IGNORE INTO users (phone, name, role) VALUES (?, ?, 'admin')",
+            (admin_phone, admin_name),
+        )
+        conn.commit()
+    conn.close()
 
 
 # =============================================
@@ -174,53 +198,6 @@ class TimeSlotOut(BaseModel):
 
 
 # =============================================
-# In-memory хранилище
-# =============================================
-
-# Счётчики ID
-_next_id = {"service": 11, "master": 5, "booking": 3, "user": 2}
-
-def next_id(entity: str) -> int:
-    current = _next_id[entity]
-    _next_id[entity] += 1
-    return current
-
-# --- Услуги ---
-services_db: dict[int, dict] = {
-    1:  {"id": 1,  "name": "Женская стрижка",       "category": "Стрижки",          "duration": 60,  "price": 2500, "description": "Стрижка любой сложности с мытьём и укладкой",       "image": "https://images.unsplash.com/photo-1560066984-138dadb4c035?w=400&h=300&fit=crop"},
-    2:  {"id": 2,  "name": "Мужская стрижка",       "category": "Стрижки",          "duration": 40,  "price": 1500, "description": "Классическая или модельная стрижка",                "image": "https://images.unsplash.com/photo-1599351431202-1e0f0137899a?w=400&h=300&fit=crop"},
-    3:  {"id": 3,  "name": "Окрашивание",           "category": "Стрижки",          "duration": 120, "price": 5000, "description": "Однотонное окрашивание профессиональной краской",    "image": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=400&h=300&fit=crop"},
-    4:  {"id": 4,  "name": "Маникюр классический",  "category": "Маникюр",          "duration": 60,  "price": 1800, "description": "Классический маникюр с покрытием гель-лаком",       "image": "https://images.unsplash.com/photo-1604654894610-df63bc536371?w=400&h=300&fit=crop"},
-    5:  {"id": 5,  "name": "Маникюр с дизайном",    "category": "Маникюр",          "duration": 90,  "price": 2800, "description": "Маникюр с художественным дизайном ногтей",         "image": "https://images.unsplash.com/photo-1632345031435-8727f6897d53?w=400&h=300&fit=crop"},
-    6:  {"id": 6,  "name": "Педикюр",               "category": "Маникюр",          "duration": 75,  "price": 2200, "description": "Аппаратный педикюр с покрытием",                    "image": "https://images.unsplash.com/photo-1519014816548-bf5fe059798b?w=400&h=300&fit=crop"},
-    7:  {"id": 7,  "name": "Чистка лица",           "category": "Косметология",     "duration": 90,  "price": 3500, "description": "Ультразвуковая чистка лица",                       "image": "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=400&h=300&fit=crop"},
-    8:  {"id": 8,  "name": "Пилинг",                "category": "Косметология",     "duration": 60,  "price": 3000, "description": "Химический пилинг для обновления кожи",            "image": "https://images.unsplash.com/photo-1616394584738-fc6e612e71b9?w=400&h=300&fit=crop"},
-    9:  {"id": 9,  "name": "Наращивание ресниц",    "category": "Ресницы и брови",  "duration": 120, "price": 4000, "description": "Поресничное наращивание, эффект 2D",               "image": "https://images.unsplash.com/photo-1633465631144-aa321b66d44a?w=400&h=300&fit=crop"},
-    10: {"id": 10, "name": "Коррекция бровей",      "category": "Ресницы и брови",  "duration": 30,  "price": 1000, "description": "Коррекция формы и окрашивание бровей",             "image": "https://images.unsplash.com/photo-1616683693504-3ea7e9ad6fec?w=400&h=300&fit=crop"},
-}
-
-# --- Мастера ---
-masters_db: dict[int, dict] = {
-    1: {"id": 1, "name": "Анна Иванова",    "photo": "https://i.pravatar.cc/150?img=1",  "specialization": "Стилист-колорист",    "rating": 4.9, "experience": "8 лет опыта", "portfolio": ["https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=300&h=300&fit=crop", "https://images.unsplash.com/photo-1560066984-138dadb4c035?w=300&h=300&fit=crop", "https://images.unsplash.com/photo-1599351431202-1e0f0137899a?w=300&h=300&fit=crop"]},
-    2: {"id": 2, "name": "Мария Петрова",   "photo": "https://i.pravatar.cc/150?img=5",  "specialization": "Мастер маникюра",     "rating": 4.8, "experience": "5 лет опыта", "portfolio": ["https://images.unsplash.com/photo-1604654894610-df63bc536371?w=300&h=300&fit=crop", "https://images.unsplash.com/photo-1632345031435-8727f6897d53?w=300&h=300&fit=crop", "https://images.unsplash.com/photo-1519014816548-bf5fe059798b?w=300&h=300&fit=crop"]},
-    3: {"id": 3, "name": "Елена Сидорова",  "photo": "https://i.pravatar.cc/150?img=9",  "specialization": "Косметолог",          "rating": 4.7, "experience": "6 лет опыта", "portfolio": ["https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=300&h=300&fit=crop", "https://images.unsplash.com/photo-1616394584738-fc6e612e71b9?w=300&h=300&fit=crop", "https://images.unsplash.com/photo-1512290923902-8a9f81dc236c?w=300&h=300&fit=crop"]},
-    4: {"id": 4, "name": "Ольга Козлова",   "photo": "https://i.pravatar.cc/150?img=16", "specialization": "Бровист-лешмейкер",   "rating": 4.9, "experience": "4 года опыта", "portfolio": ["https://images.unsplash.com/photo-1633465631144-aa321b66d44a?w=300&h=300&fit=crop", "https://images.unsplash.com/photo-1652201767864-49472c48b145?w=300&h=300&fit=crop", "https://images.unsplash.com/photo-1553103326-609d1bd0ca03?w=300&h=300&fit=crop"]},
-}
-
-# --- Записи ---
-bookings_db: dict[int, dict] = {
-    1: {"id": 1, "service_id": 1, "master_id": 1, "date": "2026-03-12", "time": "14:00", "client_name": "Клиент",  "client_phone": "+7 999 123-45-67", "status": "upcoming", "user_id": 1},
-    2: {"id": 2, "service_id": 4, "master_id": 2, "date": "2026-02-20", "time": "11:00", "client_name": "Клиент",  "client_phone": "+7 999 123-45-67", "status": "past",     "user_id": 1},
-}
-
-# --- Пользователи и токены ---
-users_db: dict[int, dict] = {
-    1: {"id": 1, "phone": "+79991234567", "name": "Клиент", "role": "client", "master_id": None},
-}
-tokens_db: dict[str, int] = {}  # token -> user_id
-
-
-# =============================================
 # Вспомогательные функции
 # =============================================
 
@@ -228,6 +205,34 @@ def normalize_phone(phone: str) -> str:
     """Оставляет только цифры, добавляет + в начало."""
     digits = re.sub(r"\D", "", phone)
     return f"+{digits}"
+
+
+def row_to_dict(row) -> dict | None:
+    """Превращает sqlite3.Row в обычный dict."""
+    if row is None:
+        return None
+    return dict(row)
+
+
+def get_service_dict(conn, service_id: int) -> dict | None:
+    """Достаёт услугу из БД по ID."""
+    row = conn.execute("SELECT * FROM services WHERE id = ?", (service_id,)).fetchone()
+    return row_to_dict(row)
+
+
+def get_master_dict(conn, master_id: int) -> dict | None:
+    """Достаёт мастера из БД по ID, добавляет portfolio."""
+    row = conn.execute("SELECT * FROM masters WHERE id = ?", (master_id,)).fetchone()
+    if not row:
+        return None
+    master = dict(row)
+    # Добавляем портфолио (список URL фото)
+    photos = conn.execute(
+        "SELECT image_url FROM master_portfolio WHERE master_id = ? ORDER BY position",
+        (master_id,),
+    ).fetchall()
+    master["portfolio"] = [p["image_url"] for p in photos]
+    return master
 
 
 def get_current_user(authorization: str | None) -> dict | None:
@@ -238,10 +243,14 @@ def get_current_user(authorization: str | None) -> dict | None:
     if len(parts) != 2 or parts[0] != "Bearer":
         return None
     token = parts[1]
-    user_id = tokens_db.get(token)
-    if user_id is None:
-        return None
-    return users_db.get(user_id)
+
+    conn = get_db()
+    row = conn.execute(
+        "SELECT u.* FROM users u JOIN tokens t ON u.id = t.user_id WHERE t.token = ?",
+        (token,),
+    ).fetchone()
+    conn.close()
+    return row_to_dict(row)
 
 
 def require_auth(authorization: str | None) -> dict:
@@ -258,10 +267,10 @@ def require_role(user: dict, roles: list[str]) -> None:
         raise HTTPException(status_code=403, detail="Недостаточно прав")
 
 
-def make_booking_out(booking: dict) -> dict:
+def make_booking_out(conn, booking: dict) -> dict:
     """Собирает полный ответ записи с вложенными service и master."""
-    service = services_db.get(booking["service_id"])
-    master = masters_db.get(booking["master_id"])
+    service = get_service_dict(conn, booking["service_id"])
+    master = get_master_dict(conn, booking["master_id"]) if booking["master_id"] else None
     return {
         **booking,
         "service": service,
@@ -269,28 +278,7 @@ def make_booking_out(booking: dict) -> dict:
     }
 
 
-# =============================================
-# Создание администратора при старте
-# =============================================
-
-def create_admin():
-    admin_phone = normalize_phone(os.getenv("ADMIN_PHONE", "+70000000000"))
-    admin_name = os.getenv("ADMIN_NAME", "Админ")
-
-    # Проверяем, есть ли уже админ
-    for user in users_db.values():
-        if user["role"] == "admin":
-            return
-
-    admin_id = next_id("user")
-    users_db[admin_id] = {
-        "id": admin_id,
-        "phone": admin_phone,
-        "name": admin_name,
-        "role": "admin",
-        "master_id": None,
-    }
-
+# Создаём админа при запуске
 create_admin()
 
 
@@ -302,24 +290,25 @@ create_admin()
 def register(data: UserRegister):
     """Регистрация нового пользователя (роль — client)."""
     phone = normalize_phone(data.phone)
+    conn = get_db()
 
-    # Проверяем уникальность телефона
-    for user in users_db.values():
-        if user["phone"] == phone:
-            raise HTTPException(status_code=400, detail="Пользователь с таким телефоном уже существует")
+    existing = conn.execute("SELECT id FROM users WHERE phone = ?", (phone,)).fetchone()
+    if existing:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Пользователь с таким телефоном уже существует")
 
-    user_id = next_id("user")
+    cur = conn.execute(
+        "INSERT INTO users (phone, name, role) VALUES (?, ?, 'client')",
+        (phone, data.name),
+    )
+    user_id = cur.lastrowid
+
     token = uuid.uuid4().hex
-    user = {
-        "id": user_id,
-        "phone": phone,
-        "name": data.name,
-        "role": "client",
-        "master_id": None,
-    }
-    users_db[user_id] = user
-    tokens_db[token] = user_id
+    conn.execute("INSERT INTO tokens (token, user_id) VALUES (?, ?)", (token, user_id))
+    conn.commit()
 
+    user = row_to_dict(conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone())
+    conn.close()
     return {**user, "token": token}
 
 
@@ -327,14 +316,19 @@ def register(data: UserRegister):
 def login(data: UserLogin):
     """Вход по номеру телефона. Возвращает токен."""
     phone = normalize_phone(data.phone)
+    conn = get_db()
 
-    for user in users_db.values():
-        if user["phone"] == phone:
-            token = uuid.uuid4().hex
-            tokens_db[token] = user["id"]
-            return {**user, "token": token}
+    user = conn.execute("SELECT * FROM users WHERE phone = ?", (phone,)).fetchone()
+    if not user:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
 
-    raise HTTPException(status_code=404, detail="Пользователь не найден")
+    token = uuid.uuid4().hex
+    conn.execute("INSERT INTO tokens (token, user_id) VALUES (?, ?)", (token, user["id"]))
+    conn.commit()
+    result = {**dict(user), "token": token}
+    conn.close()
+    return result
 
 
 @app.get("/auth/me", response_model=UserOut)
@@ -351,13 +345,18 @@ def me(authorization: str | None = Header(default=None)):
 @app.get("/services", response_model=list[ServiceOut])
 def get_services():
     """Список всех услуг."""
-    return list(services_db.values())
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM services").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 @app.get("/services/{service_id}", response_model=ServiceOut)
 def get_service(service_id: int):
     """Одна услуга по ID."""
-    service = services_db.get(service_id)
+    conn = get_db()
+    service = get_service_dict(conn, service_id)
+    conn.close()
     if not service:
         raise HTTPException(status_code=404, detail="Услуга не найдена")
     return service
@@ -369,9 +368,14 @@ def create_service(data: ServiceCreate, authorization: str | None = Header(defau
     user = require_auth(authorization)
     require_role(user, ["admin"])
 
-    service_id = next_id("service")
-    service = {"id": service_id, **data.model_dump()}
-    services_db[service_id] = service
+    conn = get_db()
+    cur = conn.execute(
+        "INSERT INTO services (name, category, duration, price, description, image) VALUES (?, ?, ?, ?, ?, ?)",
+        (data.name, data.category, data.duration, data.price, data.description, data.image),
+    )
+    conn.commit()
+    service = get_service_dict(conn, cur.lastrowid)
+    conn.close()
     return service
 
 
@@ -381,11 +385,20 @@ def update_service(service_id: int, data: ServiceCreate, authorization: str | No
     user = require_auth(authorization)
     require_role(user, ["admin"])
 
-    if service_id not in services_db:
+    conn = get_db()
+    existing = get_service_dict(conn, service_id)
+    if not existing:
+        conn.close()
         raise HTTPException(status_code=404, detail="Услуга не найдена")
 
-    services_db[service_id] = {"id": service_id, **data.model_dump()}
-    return services_db[service_id]
+    conn.execute(
+        "UPDATE services SET name=?, category=?, duration=?, price=?, description=?, image=? WHERE id=?",
+        (data.name, data.category, data.duration, data.price, data.description, data.image, service_id),
+    )
+    conn.commit()
+    service = get_service_dict(conn, service_id)
+    conn.close()
+    return service
 
 
 @app.delete("/services/{service_id}", status_code=204)
@@ -394,10 +407,15 @@ def delete_service(service_id: int, authorization: str | None = Header(default=N
     user = require_auth(authorization)
     require_role(user, ["admin"])
 
-    if service_id not in services_db:
+    conn = get_db()
+    existing = get_service_dict(conn, service_id)
+    if not existing:
+        conn.close()
         raise HTTPException(status_code=404, detail="Услуга не найдена")
 
-    del services_db[service_id]
+    conn.execute("DELETE FROM services WHERE id = ?", (service_id,))
+    conn.commit()
+    conn.close()
 
 
 # =============================================
@@ -407,13 +425,27 @@ def delete_service(service_id: int, authorization: str | None = Header(default=N
 @app.get("/masters", response_model=list[MasterOut])
 def get_masters():
     """Список всех мастеров."""
-    return list(masters_db.values())
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM masters").fetchall()
+    result = []
+    for row in rows:
+        master = dict(row)
+        photos = conn.execute(
+            "SELECT image_url FROM master_portfolio WHERE master_id = ? ORDER BY position",
+            (master["id"],),
+        ).fetchall()
+        master["portfolio"] = [p["image_url"] for p in photos]
+        result.append(master)
+    conn.close()
+    return result
 
 
 @app.get("/masters/{master_id}", response_model=MasterOut)
 def get_master(master_id: int):
     """Один мастер по ID."""
-    master = masters_db.get(master_id)
+    conn = get_db()
+    master = get_master_dict(conn, master_id)
+    conn.close()
     if not master:
         raise HTTPException(status_code=404, detail="Мастер не найден")
     return master
@@ -425,9 +457,23 @@ def create_master(data: MasterCreate, authorization: str | None = Header(default
     user = require_auth(authorization)
     require_role(user, ["admin"])
 
-    master_id = next_id("master")
-    master = {"id": master_id, **data.model_dump()}
-    masters_db[master_id] = master
+    conn = get_db()
+    cur = conn.execute(
+        "INSERT INTO masters (user_id, name, photo, specialization, rating, experience) VALUES (NULL, ?, ?, ?, ?, ?)",
+        (data.name, data.photo, data.specialization, data.rating, data.experience),
+    )
+    master_id = cur.lastrowid
+
+    # Сохраняем портфолио
+    for i, url in enumerate(data.portfolio):
+        conn.execute(
+            "INSERT INTO master_portfolio (master_id, image_url, position) VALUES (?, ?, ?)",
+            (master_id, url, i),
+        )
+
+    conn.commit()
+    master = get_master_dict(conn, master_id)
+    conn.close()
     return master
 
 
@@ -437,11 +483,29 @@ def update_master(master_id: int, data: MasterCreate, authorization: str | None 
     user = require_auth(authorization)
     require_role(user, ["admin"])
 
-    if master_id not in masters_db:
+    conn = get_db()
+    existing = get_master_dict(conn, master_id)
+    if not existing:
+        conn.close()
         raise HTTPException(status_code=404, detail="Мастер не найден")
 
-    masters_db[master_id] = {"id": master_id, **data.model_dump()}
-    return masters_db[master_id]
+    conn.execute(
+        "UPDATE masters SET name=?, photo=?, specialization=?, rating=?, experience=? WHERE id=?",
+        (data.name, data.photo, data.specialization, data.rating, data.experience, master_id),
+    )
+
+    # Пересоздаём портфолио
+    conn.execute("DELETE FROM master_portfolio WHERE master_id = ?", (master_id,))
+    for i, url in enumerate(data.portfolio):
+        conn.execute(
+            "INSERT INTO master_portfolio (master_id, image_url, position) VALUES (?, ?, ?)",
+            (master_id, url, i),
+        )
+
+    conn.commit()
+    master = get_master_dict(conn, master_id)
+    conn.close()
+    return master
 
 
 @app.delete("/masters/{master_id}", status_code=204)
@@ -450,10 +514,15 @@ def delete_master(master_id: int, authorization: str | None = Header(default=Non
     user = require_auth(authorization)
     require_role(user, ["admin"])
 
-    if master_id not in masters_db:
+    conn = get_db()
+    existing = get_master_dict(conn, master_id)
+    if not existing:
+        conn.close()
         raise HTTPException(status_code=404, detail="Мастер не найден")
 
-    del masters_db[master_id]
+    conn.execute("DELETE FROM masters WHERE id = ?", (master_id,))
+    conn.commit()
+    conn.close()
 
 
 # =============================================
@@ -469,13 +538,14 @@ def get_slots(
     Генерирует слоты 9:00–19:00 с шагом 30 минут.
     Помечает занятые (уже есть запись) как available=false.
     """
-    # Собираем занятые времена у этого мастера в этот день
-    busy_times: set[str] = set()
-    for booking in bookings_db.values():
-        if booking["master_id"] == master_id and booking["date"] == date and booking["status"] != "cancelled":
-            busy_times.add(booking["time"])
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT time FROM bookings WHERE master_id = ? AND date = ? AND status != 'cancelled'",
+        (master_id, date),
+    ).fetchall()
+    conn.close()
+    busy_times = {r["time"] for r in rows}
 
-    # Генерируем сетку слотов
     slots: list[dict] = []
     for hour in range(9, 20):
         time_str = f"{hour}:00"
@@ -495,43 +565,54 @@ def get_slots(
 def create_booking(data: BookingCreate, authorization: str | None = Header(default=None)):
     """Создать запись. Авторизация не обязательна (гостевая запись)."""
     user = get_current_user(authorization)
+    conn = get_db()
 
     # Проверяем, что услуга существует
-    if data.service_id not in services_db:
+    if not get_service_dict(conn, data.service_id):
+        conn.close()
         raise HTTPException(status_code=400, detail="Услуга не найдена")
 
     # Проверяем, что мастер существует (0 = «любой»)
-    if data.master_id != 0 and data.master_id not in masters_db:
+    if data.master_id != 0 and not get_master_dict(conn, data.master_id):
+        conn.close()
         raise HTTPException(status_code=400, detail="Мастер не найден")
 
     # Проверяем, что дата не в прошлом
     try:
         booking_date = date.fromisoformat(data.date)
         if booking_date < date.today():
+            conn.close()
             raise HTTPException(status_code=400, detail="Нельзя записаться на прошедшую дату")
     except ValueError:
+        conn.close()
         raise HTTPException(status_code=400, detail="Неверный формат даты")
 
     # Проверяем, что слот свободен (если мастер выбран)
     if data.master_id != 0:
-        for booking in bookings_db.values():
-            if (booking["master_id"] == data.master_id
-                    and booking["date"] == data.date
-                    and booking["time"] == data.time
-                    and booking["status"] != "cancelled"):
-                raise HTTPException(status_code=400, detail="Это время уже занято у данного мастера")
+        conflict = conn.execute(
+            "SELECT id FROM bookings WHERE master_id = ? AND date = ? AND time = ? AND status != 'cancelled'",
+            (data.master_id, data.date, data.time),
+        ).fetchone()
+        if conflict:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Это время уже занято у данного мастера")
 
-    booking_id = next_id("booking")
-    booking = {
-        "id": booking_id,
-        **data.model_dump(),
-        "client_phone": normalize_phone(data.client_phone),
-        "status": "upcoming",
-        "user_id": user["id"] if user else None,
-    }
-    bookings_db[booking_id] = booking
+    phone = normalize_phone(data.client_phone)
+    master_id_val = data.master_id if data.master_id != 0 else None
+    user_id_val = user["id"] if user else None
 
-    return make_booking_out(booking)
+    cur = conn.execute(
+        "INSERT INTO bookings (service_id, master_id, user_id, date, time, client_name, client_phone, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'upcoming')",
+        (data.service_id, master_id_val, user_id_val, data.date, data.time, data.client_name, phone),
+    )
+    conn.commit()
+
+    booking = row_to_dict(conn.execute("SELECT * FROM bookings WHERE id = ?", (cur.lastrowid,)).fetchone())
+    # Для ответа: master_id=NULL нужно вернуть как 0 (фронтенд ожидает число)
+    booking["master_id"] = booking["master_id"] or 0
+    result = make_booking_out(conn, booking)
+    conn.close()
+    return result
 
 
 @app.get("/bookings", response_model=list[BookingOut])
@@ -540,7 +621,15 @@ def get_all_bookings(authorization: str | None = Header(default=None)):
     user = require_auth(authorization)
     require_role(user, ["admin"])
 
-    return [make_booking_out(b) for b in bookings_db.values()]
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM bookings").fetchall()
+    result = []
+    for row in rows:
+        b = dict(row)
+        b["master_id"] = b["master_id"] or 0
+        result.append(make_booking_out(conn, b))
+    conn.close()
+    return result
 
 
 @app.get("/bookings/my", response_model=list[BookingOut])
@@ -553,22 +642,32 @@ def get_my_bookings(
     С авторизацией — по user_id / master_id.
     """
     user = get_current_user(authorization)
+    conn = get_db()
+
+    if user:
+        if user["role"] == "admin":
+            rows = conn.execute("SELECT * FROM bookings").fetchall()
+        elif user["role"] == "master":
+            # Ищем master_id по user_id
+            master = conn.execute("SELECT id FROM masters WHERE user_id = ?", (user["id"],)).fetchone()
+            if master:
+                rows = conn.execute("SELECT * FROM bookings WHERE master_id = ?", (master["id"],)).fetchall()
+            else:
+                rows = []
+        else:
+            rows = conn.execute("SELECT * FROM bookings WHERE user_id = ?", (user["id"],)).fetchall()
+    elif phone:
+        normalized = normalize_phone(phone)
+        rows = conn.execute("SELECT * FROM bookings WHERE client_phone = ?", (normalized,)).fetchall()
+    else:
+        rows = []
 
     result = []
-    for booking in bookings_db.values():
-        # С авторизацией — по user_id или master_id
-        if user:
-            if user["role"] == "client" and booking.get("user_id") == user["id"]:
-                result.append(make_booking_out(booking))
-            elif user["role"] == "master" and user.get("master_id") and booking["master_id"] == user["master_id"]:
-                result.append(make_booking_out(booking))
-            elif user["role"] == "admin":
-                result.append(make_booking_out(booking))
-        # Без авторизации — по номеру телефона
-        elif phone:
-            if booking.get("client_phone") == normalize_phone(phone):
-                result.append(make_booking_out(booking))
-
+    for row in rows:
+        b = dict(row)
+        b["master_id"] = b["master_id"] or 0
+        result.append(make_booking_out(conn, b))
+    conn.close()
     return result
 
 
@@ -576,37 +675,56 @@ def get_my_bookings(
 def get_booking(booking_id: int, authorization: str | None = Header(default=None)):
     """Одна запись по ID (владелец, мастер записи или admin)."""
     user = require_auth(authorization)
+    conn = get_db()
 
-    booking = bookings_db.get(booking_id)
-    if not booking:
+    row = conn.execute("SELECT * FROM bookings WHERE id = ?", (booking_id,)).fetchone()
+    if not row:
+        conn.close()
         raise HTTPException(status_code=404, detail="Запись не найдена")
 
-    # Проверяем доступ
+    booking = dict(row)
+
     is_owner = booking.get("user_id") == user["id"]
-    is_master = user["role"] == "master" and user.get("master_id") == booking["master_id"]
     is_admin = user["role"] == "admin"
 
-    if not (is_owner or is_master or is_admin):
+    if not (is_owner or is_admin):
+        conn.close()
         raise HTTPException(status_code=403, detail="Нет доступа к этой записи")
 
-    return make_booking_out(booking)
+    booking["master_id"] = booking["master_id"] or 0
+    result = make_booking_out(conn, booking)
+    conn.close()
+    return result
 
 
 @app.patch("/bookings/{booking_id}/cancel", response_model=BookingOut)
 def cancel_booking(booking_id: int, authorization: str | None = Header(default=None)):
     """Отменить запись. Без авторизации — доступно всем (по ID записи)."""
-    booking = bookings_db.get(booking_id)
-    if not booking:
+    conn = get_db()
+
+    row = conn.execute("SELECT * FROM bookings WHERE id = ?", (booking_id,)).fetchone()
+    if not row:
+        conn.close()
         raise HTTPException(status_code=404, detail="Запись не найдена")
+
+    booking = dict(row)
 
     # Если есть авторизация — проверяем владельца
     user = get_current_user(authorization)
     if user and user["role"] != "admin":
         if booking.get("user_id") and booking["user_id"] != user["id"]:
+            conn.close()
             raise HTTPException(status_code=403, detail="Вы можете отменять только свои записи")
 
     if booking["status"] == "cancelled":
+        conn.close()
         raise HTTPException(status_code=400, detail="Запись уже отменена")
 
+    conn.execute("UPDATE bookings SET status = 'cancelled' WHERE id = ?", (booking_id,))
+    conn.commit()
+
     booking["status"] = "cancelled"
-    return make_booking_out(booking)
+    booking["master_id"] = booking["master_id"] or 0
+    result = make_booking_out(conn, booking)
+    conn.close()
+    return result
