@@ -7,6 +7,7 @@ import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { type Service, type Master } from "../data/mock";
 import { PageWrapper, BackButton } from "../components/Layout";
+import { useAuth } from "../auth/AuthContext";
 
 // Тип записи, как приходит с API
 interface BookingItem {
@@ -20,6 +21,7 @@ interface BookingItem {
 
 export default function MyBookingsPage() {
   const navigate = useNavigate();
+  const { token } = useAuth();
   const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
   const [cancelId, setCancelId] = useState<number | null>(null);
 
@@ -31,9 +33,9 @@ export default function MyBookingsPage() {
     setLoading(true);
     setError(false);
 
-    // Ищем записи по телефону, сохранённому при бронировании
-    const phone = localStorage.getItem("slotify_phone") || "";
-    fetch(`/api/bookings/my?phone=${encodeURIComponent(phone)}`)
+    fetch("/api/bookings/my", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
       .then((r) => {
         if (!r.ok) throw new Error();
         return r.json();
@@ -48,7 +50,7 @@ export default function MyBookingsPage() {
       });
   };
 
-  useEffect(() => { loadBookings(); }, []);
+  useEffect(() => { loadBookings(); }, [token]);
 
   const filtered = bookings.filter((b) =>
     tab === "upcoming" ? b.status === "upcoming" : b.status === "past"
@@ -58,10 +60,12 @@ export default function MyBookingsPage() {
   const confirmCancel = () => {
     if (!cancelId) return;
 
-    fetch(`/api/bookings/${cancelId}/cancel`, { method: "PATCH" })
+    fetch(`/api/bookings/${cancelId}/cancel`, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}` },
+    })
       .then((r) => {
         if (!r.ok) throw new Error();
-        // Убираем из списка или обновляем статус
         setBookings((prev) => prev.filter((b) => b.id !== cancelId));
         setCancelId(null);
       })

@@ -3,6 +3,7 @@
 # Данные хранятся в SQLite (файл slotify.db)
 # =============================================
 
+import hashlib
 import os
 import re
 import uuid
@@ -49,17 +50,28 @@ def test_page():
 
 init_db()
 
+SECRET_KEY = os.getenv("SECRET_KEY", "slotify-dev-secret")
+
+
+def hash_password(password: str) -> str:
+    """Хеширует пароль с солью через SHA-256."""
+    salted = SECRET_KEY + password
+    return hashlib.sha256(salted.encode()).hexdigest()
+
+
 def create_admin():
     """Создаёт администратора, если его ещё нет."""
-    admin_phone = normalize_phone(os.getenv("ADMIN_PHONE", "+70000000000"))
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@slotify.ru")
+    admin_password = os.getenv("ADMIN_PASSWORD", "admin123")
     admin_name = os.getenv("ADMIN_NAME", "Админ")
+    admin_phone = os.getenv("ADMIN_PHONE", "+70000000000")
 
     conn = get_db()
     existing = conn.execute("SELECT id FROM users WHERE role = 'admin'").fetchone()
     if not existing:
         conn.execute(
-            "INSERT OR IGNORE INTO users (phone, name, role) VALUES (?, ?, 'admin')",
-            (admin_phone, admin_name),
+            "INSERT OR IGNORE INTO users (email, password_hash, name, phone, role) VALUES (?, ?, ?, ?, 'admin')",
+            (admin_email, hash_password(admin_password), admin_name, admin_phone),
         )
         conn.commit()
     conn.close()
@@ -68,6 +80,45 @@ def create_admin():
 # =============================================
 # Pydantic-модели (схемы данных)
 # =============================================
+
+# ---------- Общие валидаторы ----------
+
+VALID_TIMES = set()
+for _h in range(9, 20):
+    VALID_TIMES.add(f"{_h}:00")
+    if _h < 19:
+        VALID_TIMES.add(f"{_h}:30")
+
+
+def validate_phone(v: str) -> str:
+    """Проверяет телефон: 11–15 цифр."""
+    digits = re.sub(r"\D", "", v)
+    if len(digits) < 11:
+        raise ValueError("Телефон должен содержать минимум 11 цифр")
+    if len(digits) > 15:
+        raise ValueError("Телефон слишком длинный")
+    return v
+
+
+def validate_name(v: str, min_len: int = 2, max_len: int = 50) -> str:
+    """Проверяет имя: min–max символов после trim."""
+    stripped = v.strip()
+    if len(stripped) < min_len:
+        raise ValueError(f"Минимум {min_len} символа")
+    if len(stripped) > max_len:
+        raise ValueError(f"Максимум {max_len} символов")
+    return stripped
+
+
+def validate_not_empty(v: str, max_len: int = 500) -> str:
+    """Проверяет что строка непустая и не слишком длинная."""
+    stripped = v.strip()
+    if len(stripped) < 1:
+        raise ValueError("Поле не может быть пустым")
+    if len(stripped) > max_len:
+        raise ValueError(f"Максимум {max_len} символов")
+    return stripped
+
 
 # ---------- Услуга ----------
 class ServiceCreate(BaseModel):
@@ -78,11 +129,23 @@ class ServiceCreate(BaseModel):
     description: str
     image: str
 
-    @field_validator("duration", "price")
+    @field_validator("name", "category", "description", "image")
     @classmethod
-    def must_be_positive(cls, v: int) -> int:
-        if v <= 0:
-            raise ValueError("Должно быть больше 0")
+    def not_empty(cls, v: str) -> str:
+        return validate_not_empty(v)
+
+    @field_validator("duration")
+    @classmethod
+    def duration_range(cls, v: int) -> int:
+        if v <= 0 or v > 480:
+            raise ValueError("Длительность должна быть от 1 до 480 минут")
+        return v
+
+    @field_validator("price")
+    @classmethod
+    def price_range(cls, v: int) -> int:
+        if v <= 0 or v > 100000:
+            raise ValueError("Цена должна быть от 1 до 100000")
         return v
 
 class ServiceOut(ServiceCreate):
@@ -100,16 +163,29 @@ class MasterCreate(BaseModel):
 
     @field_validator("name")
     @classmethod
-    def name_min_length(cls, v: str) -> str:
-        if len(v.strip()) < 2:
-            raise ValueError("Имя должно содержать минимум 2 символа")
-        return v.strip()
+    def name_check(cls, v: str) -> str:
+        return validate_name(v)
+
+    @field_validator("photo", "specialization", "experience")
+    @classmethod
+    def not_empty(cls, v: str) -> str:
+        return validate_not_empty(v)
 
     @field_validator("rating")
     @classmethod
     def rating_range(cls, v: float) -> float:
         if not 0.0 <= v <= 5.0:
             raise ValueError("Рейтинг должен быть от 0 до 5")
+        return v
+
+    @field_validator("portfolio")
+    @classmethod
+    def portfolio_check(cls, v: list[str]) -> list[str]:
+        if len(v) > 20:
+            raise ValueError("Максимум 20 фото в портфолио")
+        for url in v:
+            if not url.strip():
+                raise ValueError("URL фото не может быть пустым")
         return v
 
 class MasterOut(MasterCreate):
@@ -127,18 +203,13 @@ class BookingCreate(BaseModel):
 
     @field_validator("client_name")
     @classmethod
-    def name_min_length(cls, v: str) -> str:
-        if len(v.strip()) < 2:
-            raise ValueError("Имя должно содержать минимум 2 символа")
-        return v.strip()
+    def name_check(cls, v: str) -> str:
+        return validate_name(v)
 
     @field_validator("client_phone")
     @classmethod
-    def phone_valid(cls, v: str) -> str:
-        digits = re.sub(r"\D", "", v)
-        if len(digits) < 11:
-            raise ValueError("Телефон должен содержать минимум 11 цифр")
-        return v
+    def phone_check(cls, v: str) -> str:
+        return validate_phone(v)
 
     @field_validator("date")
     @classmethod
@@ -147,6 +218,20 @@ class BookingCreate(BaseModel):
             date.fromisoformat(v)
         except ValueError:
             raise ValueError("Дата должна быть в формате YYYY-MM-DD")
+        return v
+
+    @field_validator("time")
+    @classmethod
+    def time_format(cls, v: str) -> str:
+        # Проверяем формат HH:MM
+        match = re.match(r"^(\d{1,2}):(\d{2})$", v)
+        if not match:
+            raise ValueError("Время должно быть в формате HH:MM")
+        hours, minutes = int(match.group(1)), int(match.group(2))
+        if hours < 0 or hours > 23 or minutes < 0 or minutes > 59:
+            raise ValueError("Некорректное время")
+        if v not in VALID_TIMES:
+            raise ValueError("Время должно быть в диапазоне 9:00–19:30 с шагом 30 минут")
         return v
 
 class BookingOut(BaseModel):
@@ -164,31 +249,64 @@ class BookingOut(BaseModel):
 
 # ---------- Пользователь и авторизация ----------
 class UserRegister(BaseModel):
-    phone: str
+    email: str
+    password: str
     name: str
+    phone: str
 
-    @field_validator("phone")
+    @field_validator("email")
     @classmethod
-    def phone_valid(cls, v: str) -> str:
-        digits = re.sub(r"\D", "", v)
-        if len(digits) < 11:
-            raise ValueError("Телефон должен содержать минимум 11 цифр")
+    def email_check(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not re.match(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", v):
+            raise ValueError("Некорректный email")
+        if len(v) > 100:
+            raise ValueError("Email слишком длинный")
+        return v
+
+    @field_validator("password")
+    @classmethod
+    def password_check(cls, v: str) -> str:
+        if len(v) < 6:
+            raise ValueError("Пароль должен содержать минимум 6 символов")
+        if len(v) > 100:
+            raise ValueError("Пароль слишком длинный")
         return v
 
     @field_validator("name")
     @classmethod
-    def name_min_length(cls, v: str) -> str:
-        if len(v.strip()) < 2:
-            raise ValueError("Имя должно содержать минимум 2 символа")
-        return v.strip()
+    def name_check(cls, v: str) -> str:
+        return validate_name(v)
+
+    @field_validator("phone")
+    @classmethod
+    def phone_check(cls, v: str) -> str:
+        return validate_phone(v)
 
 class UserLogin(BaseModel):
-    phone: str
+    email: str
+    password: str
+
+    @field_validator("email")
+    @classmethod
+    def email_check(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not v:
+            raise ValueError("Введите email")
+        return v
+
+    @field_validator("password")
+    @classmethod
+    def password_check(cls, v: str) -> str:
+        if not v:
+            raise ValueError("Введите пароль")
+        return v
 
 class UserOut(BaseModel):
     id: int
-    phone: str
+    email: str
     name: str
+    phone: str
     role: str
     token: str | None = None
 
@@ -289,17 +407,19 @@ create_admin()
 @app.post("/auth/register", response_model=UserOut, status_code=201)
 def register(data: UserRegister):
     """Регистрация нового пользователя (роль — client)."""
-    phone = normalize_phone(data.phone)
     conn = get_db()
 
-    existing = conn.execute("SELECT id FROM users WHERE phone = ?", (phone,)).fetchone()
+    existing = conn.execute("SELECT id FROM users WHERE email = ?", (data.email,)).fetchone()
     if existing:
         conn.close()
-        raise HTTPException(status_code=400, detail="Пользователь с таким телефоном уже существует")
+        raise HTTPException(status_code=400, detail="Пользователь с таким email уже существует")
+
+    phone = normalize_phone(data.phone)
+    password_hash = hash_password(data.password)
 
     cur = conn.execute(
-        "INSERT INTO users (phone, name, role) VALUES (?, ?, 'client')",
-        (phone, data.name),
+        "INSERT INTO users (email, password_hash, name, phone, role) VALUES (?, ?, ?, ?, 'client')",
+        (data.email, password_hash, data.name, phone),
     )
     user_id = cur.lastrowid
 
@@ -314,14 +434,17 @@ def register(data: UserRegister):
 
 @app.post("/auth/login", response_model=UserOut)
 def login(data: UserLogin):
-    """Вход по номеру телефона. Возвращает токен."""
-    phone = normalize_phone(data.phone)
+    """Вход по email + паролю. Возвращает токен."""
     conn = get_db()
 
-    user = conn.execute("SELECT * FROM users WHERE phone = ?", (phone,)).fetchone()
+    user = conn.execute("SELECT * FROM users WHERE email = ?", (data.email,)).fetchone()
     if not user:
         conn.close()
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
+        raise HTTPException(status_code=401, detail="Неверный email или пароль")
+
+    if dict(user)["password_hash"] != hash_password(data.password):
+        conn.close()
+        raise HTTPException(status_code=401, detail="Неверный email или пароль")
 
     token = uuid.uuid4().hex
     conn.execute("UPDATE users SET token = ? WHERE id = ?", (token, user["id"]))
@@ -533,11 +656,24 @@ def delete_master(master_id: int, authorization: str | None = Header(default=Non
 def get_slots(
     master_id: int = Query(..., description="ID мастера"),
     date: str = Query(..., description="Дата в формате YYYY-MM-DD"),
+    authorization: str | None = Header(default=None),
 ):
     """Доступные слоты для мастера на дату.
+    Требует авторизацию.
     Генерирует слоты 9:00–19:00 с шагом 30 минут.
-    Помечает занятые (уже есть запись) как available=false.
     """
+    require_auth(authorization)
+
+    # Валидация даты
+    try:
+        from datetime import date as date_cls
+        date_cls.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Дата должна быть в формате YYYY-MM-DD")
+
+    if master_id < 1:
+        raise HTTPException(status_code=400, detail="ID мастера должен быть больше 0")
+
     conn = get_db()
     rows = conn.execute(
         "SELECT time FROM bookings WHERE master_id = ? AND date = ? AND status != 'cancelled'",
@@ -563,8 +699,8 @@ def get_slots(
 
 @app.post("/bookings", response_model=BookingOut, status_code=201)
 def create_booking(data: BookingCreate, authorization: str | None = Header(default=None)):
-    """Создать запись. Авторизация не обязательна (гостевая запись)."""
-    user = get_current_user(authorization)
+    """Создать запись. Требует авторизацию."""
+    user = require_auth(authorization)
     conn = get_db()
 
     # Проверяем, что услуга существует
@@ -599,16 +735,14 @@ def create_booking(data: BookingCreate, authorization: str | None = Header(defau
 
     phone = normalize_phone(data.client_phone)
     master_id_val = data.master_id if data.master_id != 0 else None
-    user_id_val = user["id"] if user else None
 
     cur = conn.execute(
         "INSERT INTO bookings (service_id, master_id, user_id, date, time, client_name, client_phone, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'upcoming')",
-        (data.service_id, master_id_val, user_id_val, data.date, data.time, data.client_name, phone),
+        (data.service_id, master_id_val, user["id"], data.date, data.time, data.client_name, phone),
     )
     conn.commit()
 
     booking = row_to_dict(conn.execute("SELECT * FROM bookings WHERE id = ?", (cur.lastrowid,)).fetchone())
-    # Для ответа: master_id=NULL нужно вернуть как 0 (фронтенд ожидает число)
     booking["master_id"] = booking["master_id"] or 0
     result = make_booking_out(conn, booking)
     conn.close()
@@ -622,7 +756,7 @@ def get_all_bookings(authorization: str | None = Header(default=None)):
     require_role(user, ["admin"])
 
     conn = get_db()
-    rows = conn.execute("SELECT * FROM bookings").fetchall()
+    rows = conn.execute("SELECT * FROM bookings ORDER BY date, time").fetchall()
     result = []
     for row in rows:
         b = dict(row)
@@ -634,33 +768,26 @@ def get_all_bookings(authorization: str | None = Header(default=None)):
 
 @app.get("/bookings/my", response_model=list[BookingOut])
 def get_my_bookings(
-    phone: str = Query("", description="Телефон клиента для поиска записей"),
     authorization: str | None = Header(default=None),
 ):
-    """Мои записи.
-    Без авторизации — поиск по номеру телефона.
-    С авторизацией — по user_id / master_id.
+    """Мои записи. Требует авторизацию.
+    client — видит свои записи (по user_id).
+    master — видит записи к себе.
+    admin — видит все.
     """
-    user = get_current_user(authorization)
+    user = require_auth(authorization)
     conn = get_db()
 
-    if user:
-        if user["role"] == "admin":
-            rows = conn.execute("SELECT * FROM bookings ORDER BY date, time").fetchall()
-        elif user["role"] == "master":
-            # Ищем master_id по user_id
-            master = conn.execute("SELECT id FROM masters WHERE user_id = ?", (user["id"],)).fetchone()
-            if master:
-                rows = conn.execute("SELECT * FROM bookings WHERE master_id = ? ORDER BY date, time", (master["id"],)).fetchall()
-            else:
-                rows = []
+    if user["role"] == "admin":
+        rows = conn.execute("SELECT * FROM bookings ORDER BY date, time").fetchall()
+    elif user["role"] == "master":
+        master = conn.execute("SELECT id FROM masters WHERE user_id = ?", (user["id"],)).fetchone()
+        if master:
+            rows = conn.execute("SELECT * FROM bookings WHERE master_id = ? ORDER BY date, time", (master["id"],)).fetchall()
         else:
-            rows = conn.execute("SELECT * FROM bookings WHERE user_id = ? ORDER BY date, time", (user["id"],)).fetchall()
-    elif phone:
-        normalized = normalize_phone(phone)
-        rows = conn.execute("SELECT * FROM bookings WHERE client_phone = ? ORDER BY date, time", (normalized,)).fetchall()
+            rows = []
     else:
-        rows = []
+        rows = conn.execute("SELECT * FROM bookings WHERE user_id = ? ORDER BY date, time", (user["id"],)).fetchall()
 
     result = []
     for row in rows:
@@ -673,7 +800,7 @@ def get_my_bookings(
 
 @app.get("/bookings/{booking_id}", response_model=BookingOut)
 def get_booking(booking_id: int, authorization: str | None = Header(default=None)):
-    """Одна запись по ID (владелец, мастер записи или admin)."""
+    """Одна запись по ID (только владелец или admin)."""
     user = require_auth(authorization)
     conn = get_db()
 
@@ -699,7 +826,8 @@ def get_booking(booking_id: int, authorization: str | None = Header(default=None
 
 @app.patch("/bookings/{booking_id}/cancel", response_model=BookingOut)
 def cancel_booking(booking_id: int, authorization: str | None = Header(default=None)):
-    """Отменить запись. Без авторизации — доступно всем (по ID записи)."""
+    """Отменить запись. Требует авторизацию. Только владелец или admin."""
+    user = require_auth(authorization)
     conn = get_db()
 
     row = conn.execute("SELECT * FROM bookings WHERE id = ?", (booking_id,)).fetchone()
@@ -709,12 +837,13 @@ def cancel_booking(booking_id: int, authorization: str | None = Header(default=N
 
     booking = dict(row)
 
-    # Если есть авторизация — проверяем владельца
-    user = get_current_user(authorization)
-    if user and user["role"] != "admin":
-        if booking.get("user_id") and booking["user_id"] != user["id"]:
-            conn.close()
-            raise HTTPException(status_code=403, detail="Вы можете отменять только свои записи")
+    # Проверяем что это владелец или админ
+    is_owner = booking.get("user_id") == user["id"]
+    is_admin = user["role"] == "admin"
+
+    if not (is_owner or is_admin):
+        conn.close()
+        raise HTTPException(status_code=403, detail="Вы можете отменять только свои записи")
 
     if booking["status"] == "cancelled":
         conn.close()

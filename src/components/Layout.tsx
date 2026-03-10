@@ -4,9 +4,12 @@
 // =============================================
 
 import { Link } from "react-router-dom";
+import { useAuth } from "../auth/AuthContext";
 
 // --- Header: логотип и навигация ---
 export function Header() {
+  const { user, logout } = useAuth();
+
   return (
     <header className="bg-rose-500 text-white shadow-lg">
       <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
@@ -16,12 +19,23 @@ export function Header() {
           </div>
           <span className="text-2xl font-extrabold tracking-tight">Slotify</span>
         </Link>
-        <Link
-          to="/my-bookings"
-          className="bg-white/15 backdrop-blur-sm border border-white/25 text-white px-5 py-2 rounded-xl font-medium hover:bg-white/25 transition-all duration-200"
-        >
-          Мои записи
-        </Link>
+        {user && (
+          <div className="flex items-center gap-3">
+            <Link
+              to="/my-bookings"
+              className="bg-white/15 backdrop-blur-sm border border-white/25 text-white px-5 py-2 rounded-xl font-medium hover:bg-white/25 transition-all duration-200"
+            >
+              Мои записи
+            </Link>
+            <span className="text-sm text-rose-100 hidden sm:inline">{user.name}</span>
+            <button
+              onClick={logout}
+              className="text-sm text-white/70 hover:text-white transition-colors"
+            >
+              Выйти
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );

@@ -7,6 +7,14 @@ import { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { type Service, type Master, type TimeSlot } from "../data/mock";
 import { PageWrapper, BookingSteps, BackButton } from "../components/Layout";
+import { useAuth } from "../auth/AuthContext";
+
+// Хелпер: получить заголовки с токеном
+function authHeaders(token: string | null): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  return headers;
+}
 
 // ==================== ШАГ 1: Выбор мастера ====================
 export function MasterPage() {
@@ -154,6 +162,7 @@ export function MasterPage() {
 export function DateTimePage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { token } = useAuth();
   const serviceId = searchParams.get("service");
   const masterId = searchParams.get("master");
 
@@ -177,7 +186,9 @@ export function DateTimePage() {
     setSlotsError(false);
     setSelectedTime(null);
 
-    fetch(`/api/slots?master_id=${masterId}&date=${selectedDate}`)
+    fetch(`/api/slots?master_id=${masterId}&date=${selectedDate}`, {
+      headers: authHeaders(token),
+    })
       .then((r) => { if (!r.ok) throw new Error(); return r.json(); })
       .then((data) => {
         setSlots(data);
@@ -187,7 +198,7 @@ export function DateTimePage() {
         setSlotsError(true);
         setSlotsLoading(false);
       });
-  }, [selectedDate, masterId]);
+  }, [selectedDate, masterId, token]);
 
   const formatDate = (d: Date) => {
     const days = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
@@ -291,6 +302,7 @@ export function DateTimePage() {
 export function ConfirmPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { user, token } = useAuth();
 
   const serviceId = Number(searchParams.get("service"));
   const masterId = Number(searchParams.get("master"));
@@ -301,8 +313,9 @@ export function ConfirmPage() {
   const [master, setMaster] = useState<Master | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
+  // Предзаполняем из профиля
+  const [name, setName] = useState(user?.name || "");
+  const [phone, setPhone] = useState(user?.phone || "");
   const [errors, setErrors] = useState<{ name?: string; phone?: string }>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
@@ -330,11 +343,15 @@ export function ConfirmPage() {
 
     if (name.trim().length < 2) {
       newErrors.name = "Имя должно содержать минимум 2 символа";
+    } else if (name.trim().length > 50) {
+      newErrors.name = "Максимум 50 символов";
     }
 
     const digits = phone.replace(/\D/g, "");
     if (digits.length < 11) {
       newErrors.phone = "Введите номер в формате +7 (XXX) XXX-XX-XX";
+    } else if (digits.length > 15) {
+      newErrors.phone = "Номер слишком длинный";
     }
 
     setErrors(newErrors);
@@ -350,7 +367,10 @@ export function ConfirmPage() {
 
     fetch("/api/bookings", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(token),
+      },
       body: JSON.stringify({
         service_id: serviceId,
         master_id: masterId,
@@ -361,12 +381,15 @@ export function ConfirmPage() {
       }),
     })
       .then((r) => {
-        if (!r.ok) return r.json().then((err) => { throw new Error(err.detail || "Ошибка"); });
+        if (!r.ok) return r.json().then((err) => {
+          const msg = Array.isArray(err.detail)
+            ? err.detail.map((e: { msg: string }) => e.msg).join(", ")
+            : err.detail || "Ошибка";
+          throw new Error(msg);
+        });
         return r.json();
       })
       .then(() => {
-        // Сохраняем телефон, чтобы потом найти «мои записи»
-        localStorage.setItem("slotify_phone", phone);
         navigate("/booking/success");
       })
       .catch((err) => {

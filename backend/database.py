@@ -32,13 +32,15 @@ def init_db():
     conn.executescript("""
         -- Пользователи (клиенты, мастера, админы)
         CREATE TABLE IF NOT EXISTS users (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            phone      TEXT    NOT NULL UNIQUE,
-            name       TEXT    NOT NULL CHECK(length(name) >= 2),
-            role       TEXT    NOT NULL DEFAULT 'client'
-                               CHECK(role IN ('client', 'master', 'admin')),
-            token      TEXT,
-            created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            email         TEXT    NOT NULL UNIQUE,
+            password_hash TEXT    NOT NULL,
+            name          TEXT    NOT NULL CHECK(length(name) >= 2),
+            phone         TEXT    NOT NULL,
+            role          TEXT    NOT NULL DEFAULT 'client'
+                                  CHECK(role IN ('client', 'master', 'admin')),
+            token         TEXT,
+            created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
         );
 
         -- Услуги салона

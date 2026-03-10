@@ -4,7 +4,23 @@
 # Пересоздаёт таблицы и заполняет их данными
 # =============================================
 
+import hashlib
+import os
+
+from dotenv import load_dotenv
+
 from database import get_db, init_db
+
+load_dotenv()
+
+SECRET_KEY = os.getenv("SECRET_KEY", "slotify-dev-secret")
+
+
+def hash_password(password: str) -> str:
+    """Хеширует пароль с солью через SHA-256."""
+    salted = SECRET_KEY + password
+    return hashlib.sha256(salted.encode()).hexdigest()
+
 
 def seed():
     """Заполняет базу тестовыми данными."""
@@ -12,7 +28,6 @@ def seed():
     conn = get_db()
     cur = conn.cursor()
 
-    # Очищаем таблицы (порядок важен из-за внешних ключей)
     # Очищаем все таблицы и сбрасываем счётчики ID
     cur.executescript("""
         DELETE FROM bookings;
@@ -24,13 +39,18 @@ def seed():
     """)
 
     # --- Пользователи ---
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@slotify.ru")
+    admin_password = os.getenv("ADMIN_PASSWORD", "admin123")
+    admin_name = os.getenv("ADMIN_NAME", "Админ")
+    admin_phone = os.getenv("ADMIN_PHONE", "+70000000000")
+
     cur.execute(
-        "INSERT INTO users (phone, name, role) VALUES (?, ?, ?)",
-        ("+70000000000", "Админ", "admin"),
+        "INSERT INTO users (email, password_hash, name, phone, role) VALUES (?, ?, ?, ?, ?)",
+        (admin_email, hash_password(admin_password), admin_name, admin_phone, "admin"),
     )
     cur.execute(
-        "INSERT INTO users (phone, name, role) VALUES (?, ?, ?)",
-        ("+79991234567", "Клиент", "client"),
+        "INSERT INTO users (email, password_hash, name, phone, role) VALUES (?, ?, ?, ?, ?)",
+        ("client@test.ru", hash_password("client123"), "Клиент", "+79991234567", "client"),
     )
 
     # --- Услуги ---
@@ -90,6 +110,9 @@ def seed():
     conn.commit()
     conn.close()
     print("База данных заполнена тестовыми данными!")
+    print("Тестовые аккаунты:")
+    print(f"  Админ:  {admin_email} / {admin_password}")
+    print(f"  Клиент: client@test.ru / client123")
 
 
 if __name__ == "__main__":
