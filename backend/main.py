@@ -7,7 +7,7 @@ import hashlib
 import os
 import re
 import uuid
-from datetime import date
+from datetime import date, datetime
 
 from pathlib import Path
 
@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, field_validator
 
 from database import get_db, init_db
+from sms import send_booking_confirmation, send_booking_cancelled, check_balance
 
 load_dotenv()
 
@@ -399,6 +400,9 @@ def make_booking_out(conn, booking: dict) -> dict:
 # Создаём админа при запуске
 create_admin()
 
+# Проверяем баланс SMS.ru при запуске
+check_balance()
+
 
 # =============================================
 # Роуты: Авторизация
@@ -655,7 +659,7 @@ def delete_master(master_id: int, authorization: str | None = Header(default=Non
 @app.get("/slots", response_model=list[TimeSlotOut])
 def get_slots(
     master_id: int = Query(..., description="ID мастера"),
-    date: str = Query(..., description="Дата в формате YYYY-MM-DD"),
+    date_param: str = Query(..., alias="date", description="Дата в формате YYYY-MM-DD"),
     authorization: str | None = Header(default=None),
 ):
     """Доступные слоты для мастера на дату.
@@ -666,29 +670,41 @@ def get_slots(
 
     # Валидация даты
     try:
-        from datetime import date as date_cls
-        date_cls.fromisoformat(date)
+        date.fromisoformat(date_param)
     except ValueError:
         raise HTTPException(status_code=400, detail="Дата должна быть в формате YYYY-MM-DD")
 
-    if master_id < 1:
-        raise HTTPException(status_code=400, detail="ID мастера должен быть больше 0")
+    if master_id < 0:
+        raise HTTPException(status_code=400, detail="ID мастера не может быть отрицательным")
 
     conn = get_db()
-    rows = conn.execute(
-        "SELECT time FROM bookings WHERE master_id = ? AND date = ? AND status != 'cancelled'",
-        (master_id, date),
-    ).fetchall()
+    # master_id=0 означает «любой мастер» — показываем все слоты
+    if master_id == 0:
+        rows = conn.execute(
+            "SELECT time FROM bookings WHERE date = ? AND status != 'cancelled'",
+            (date_param,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT time FROM bookings WHERE master_id = ? AND date = ? AND status != 'cancelled'",
+            (master_id, date_param),
+        ).fetchall()
     conn.close()
     busy_times = {r["time"] for r in rows}
+
+    # Если дата сегодня — прошедшие слоты недоступны
+    is_today = date.fromisoformat(date_param) == date.today()
+    now = datetime.now()
 
     slots: list[dict] = []
     for hour in range(9, 20):
         time_str = f"{hour}:00"
-        slots.append({"time": time_str, "available": time_str not in busy_times})
+        past = is_today and (hour < now.hour or (hour == now.hour and 0 <= now.minute))
+        slots.append({"time": time_str, "available": not past and time_str not in busy_times})
         if hour < 19:
             time_str_half = f"{hour}:30"
-            slots.append({"time": time_str_half, "available": time_str_half not in busy_times})
+            past_half = is_today and (hour < now.hour or (hour == now.hour and 30 <= now.minute))
+            slots.append({"time": time_str_half, "available": not past_half and time_str_half not in busy_times})
 
     return slots
 
@@ -713,17 +729,23 @@ def create_booking(data: BookingCreate, authorization: str | None = Header(defau
         conn.close()
         raise HTTPException(status_code=400, detail="Мастер не найден")
 
-    # Проверяем, что дата не в прошлом
+    # Проверяем, что дата и время не в прошлом
     try:
         booking_date = date.fromisoformat(data.date)
         if booking_date < date.today():
             conn.close()
             raise HTTPException(status_code=400, detail="Нельзя записаться на прошедшую дату")
+        if booking_date == date.today():
+            now = datetime.now()
+            hours, minutes = map(int, data.time.split(":"))
+            if hours < now.hour or (hours == now.hour and minutes <= now.minute):
+                conn.close()
+                raise HTTPException(status_code=400, detail="Это время уже прошло")
     except ValueError:
         conn.close()
         raise HTTPException(status_code=400, detail="Неверный формат даты")
 
-    # Проверяем, что слот свободен (если мастер выбран)
+    # Проверяем, что слот свободен у мастера (если выбран)
     if data.master_id != 0:
         conflict = conn.execute(
             "SELECT id FROM bookings WHERE master_id = ? AND date = ? AND time = ? AND status != 'cancelled'",
@@ -732,6 +754,15 @@ def create_booking(data: BookingCreate, authorization: str | None = Header(defau
         if conflict:
             conn.close()
             raise HTTPException(status_code=400, detail="Это время уже занято у данного мастера")
+
+    # Проверяем, что у пользователя нет записи на это же время
+    user_conflict = conn.execute(
+        "SELECT id FROM bookings WHERE user_id = ? AND date = ? AND time = ? AND status != 'cancelled'",
+        (user["id"], data.date, data.time),
+    ).fetchone()
+    if user_conflict:
+        conn.close()
+        raise HTTPException(status_code=400, detail="У вас уже есть запись на это время")
 
     phone = normalize_phone(data.client_phone)
     master_id_val = data.master_id if data.master_id != 0 else None
@@ -746,6 +777,18 @@ def create_booking(data: BookingCreate, authorization: str | None = Header(defau
     booking["master_id"] = booking["master_id"] or 0
     result = make_booking_out(conn, booking)
     conn.close()
+
+    # SMS-подтверждение (не блокирует ответ при ошибке)
+    service_dict = result.get("service")
+    master_dict = result.get("master")
+    send_booking_confirmation(
+        phone=phone,
+        service_name=service_dict["name"] if service_dict else "Услуга",
+        date=data.date,
+        time=data.time,
+        master_name=master_dict["name"] if master_dict else None,
+    )
+
     return result
 
 
@@ -856,4 +899,14 @@ def cancel_booking(booking_id: int, authorization: str | None = Header(default=N
     booking["master_id"] = booking["master_id"] or 0
     result = make_booking_out(conn, booking)
     conn.close()
+
+    # SMS об отмене (не блокирует ответ при ошибке)
+    service_dict = result.get("service")
+    send_booking_cancelled(
+        phone=booking["client_phone"],
+        service_name=service_dict["name"] if service_dict else "Услуга",
+        date=booking["date"],
+        time=booking["time"],
+    )
+
     return result
