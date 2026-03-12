@@ -52,6 +52,10 @@ def seed():
         "INSERT INTO users (email, password_hash, name, phone, role) VALUES (?, ?, ?, ?, ?)",
         ("client@test.ru", hash_password("client123"), "Клиент", "+79991234567", "client"),
     )
+    cur.execute(
+        "INSERT INTO users (email, password_hash, name, phone, role) VALUES (?, ?, ?, ?, ?)",
+        ("test@example.com", hash_password("password123"), "Тест", "+79990000000", "client"),
+    )
 
     # --- Услуги ---
     services = [
@@ -113,6 +117,7 @@ def seed():
     print("Тестовые аккаунты:")
     print(f"  Админ:  {admin_email} / {admin_password}")
     print(f"  Клиент: client@test.ru / client123")
+    print(f"  Тест:   test@example.com / password123")
 
 
 if __name__ == "__main__":
