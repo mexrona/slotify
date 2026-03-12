@@ -1,7 +1,13 @@
 import { Page } from "@playwright/test";
 
+// Сброс rate limiter перед тестом
+export async function resetRateLimit(page: Page) {
+  await page.request.post("/api/auth/reset-rate-limit");
+}
+
 // Вход в аккаунт через форму
 export async function login(page: Page, email: string, password: string) {
+  await resetRateLimit(page);
   await page.goto("/login");
   await page.getByPlaceholder("your@email.com").fill(email);
   await page.getByPlaceholder("Минимум 6 символов").fill(password);

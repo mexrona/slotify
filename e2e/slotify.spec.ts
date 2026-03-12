@@ -1,10 +1,11 @@
 import { test, expect } from "@playwright/test";
-import { login, uniqueEmail } from "./helpers";
+import { login, uniqueEmail, resetRateLimit } from "./helpers";
 
 // =============================================
 // 1. Регистрация и вход
 // =============================================
 test("Пользователь регистрируется и попадает на главную", async ({ page }) => {
+  await resetRateLimit(page);
   const email = uniqueEmail();
 
   await page.goto("/login");
@@ -74,6 +75,7 @@ test("Пользователь создаёт запись и видит её в
 // 3. Валидация формы регистрации
 // =============================================
 test("Пользователь не может зарегистрироваться с невалидными данными", async ({ page }) => {
+  await resetRateLimit(page);
   await page.goto("/login");
   await page.getByRole("button", { name: "Зарегистрироваться" }).click();
 

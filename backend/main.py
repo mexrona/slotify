@@ -6,13 +6,15 @@
 import hashlib
 import os
 import re
+import time
 import uuid
+from collections import defaultdict
 from datetime import date, datetime
 
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, field_validator
@@ -32,9 +34,43 @@ app.add_middleware(
         "http://localhost:8001",
         "http://127.0.0.1:8001",
     ],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
+    allow_headers=["Content-Type", "Authorization"],
 )
+
+
+# --- Rate limiter (ограничение частоты запросов) ---
+# Хранит список таймстемпов запросов для каждого IP
+_rate_limit_store: dict[str, list[float]] = defaultdict(list)
+
+RATE_LIMIT_MAX = 10        # максимум запросов
+RATE_LIMIT_WINDOW = 15 * 60  # за 15 минут (в секундах)
+
+
+def check_rate_limit(request: Request):
+    """Проверяет, не превышен ли лимит запросов для IP."""
+    ip = request.client.host if request.client else "unknown"
+    now = time.time()
+    window_start = now - RATE_LIMIT_WINDOW
+
+    # Убираем старые записи
+    timestamps = _rate_limit_store[ip]
+    _rate_limit_store[ip] = [t for t in timestamps if t > window_start]
+
+    if len(_rate_limit_store[ip]) >= RATE_LIMIT_MAX:
+        raise HTTPException(
+            status_code=429,
+            detail="Слишком много попыток. Подождите 15 минут и попробуйте снова.",
+        )
+
+    _rate_limit_store[ip].append(now)
+
+
+@app.post("/auth/reset-rate-limit")
+def reset_rate_limit():
+    """Сброс rate limiter (только для тестов)."""
+    _rate_limit_store.clear()
+    return {"ok": True}
 
 
 # --- Тестовая страница ---
@@ -409,8 +445,9 @@ check_balance()
 # =============================================
 
 @app.post("/auth/register", response_model=UserOut, status_code=201)
-def register(data: UserRegister):
+def register(data: UserRegister, request: Request):
     """Регистрация нового пользователя (роль — client)."""
+    check_rate_limit(request)
     conn = get_db()
 
     existing = conn.execute("SELECT id FROM users WHERE email = ?", (data.email,)).fetchone()
@@ -437,8 +474,9 @@ def register(data: UserRegister):
 
 
 @app.post("/auth/login", response_model=UserOut)
-def login(data: UserLogin):
+def login(data: UserLogin, request: Request):
     """Вход по email + паролю. Возвращает токен."""
+    check_rate_limit(request)
     conn = get_db()
 
     user = conn.execute("SELECT * FROM users WHERE email = ?", (data.email,)).fetchone()
