@@ -56,6 +56,11 @@ def seed():
         "INSERT INTO users (email, password_hash, name, phone, role) VALUES (?, ?, ?, ?, ?)",
         ("test@example.com", hash_password("password123"), "Тест", "+79990000000", "client"),
     )
+    # Тестовый админ с фиксированным паролем (для e2e-тестов)
+    cur.execute(
+        "INSERT INTO users (email, password_hash, name, phone, role) VALUES (?, ?, ?, ?, ?)",
+        ("testadmin@example.com", hash_password("admin123"), "Тест Админ", "+79990000001", "admin"),
+    )
 
     # --- Услуги ---
     services = [

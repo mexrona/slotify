@@ -12,6 +12,7 @@ import ServicesPage from "./pages/ServicesPage";
 import { MasterPage, DateTimePage, ConfirmPage } from "./pages/BookingFlow";
 import SuccessPage from "./pages/SuccessPage";
 import MyBookingsPage from "./pages/MyBookingsPage";
+import AdminPage from "./pages/AdminPage";
 
 // Защищённый роут: если не авторизован — редирект на /login
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -51,6 +52,29 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// Роут только для админа: если не admin — редирект на главную
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="w-10 h-10 border-4 border-rose-200 border-t-rose-500 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (user.role !== "admin") {
+    return <Navigate to="/" replace />;
+  }
+
+  return <>{children}</>;
+}
+
 function AppRoutes() {
   return (
     <Routes>
@@ -65,6 +89,7 @@ function AppRoutes() {
       <Route path="/booking/confirm" element={<PrivateRoute><ConfirmPage /></PrivateRoute>} />
       <Route path="/booking/success" element={<PrivateRoute><SuccessPage /></PrivateRoute>} />
       <Route path="/my-bookings" element={<PrivateRoute><MyBookingsPage /></PrivateRoute>} />
+      <Route path="/admin" element={<AdminRoute><AdminPage /></AdminRoute>} />
     </Routes>
   );
 }

@@ -37,12 +37,10 @@ export default function HomePage() {
 
   const categories = Array.from(new Set(services.map((s) => s.category)));
 
-  // Тематические фото для категорий (Unsplash)
-  const categoryIcons: Record<string, string> = {
-    "Стрижки": "https://images.unsplash.com/photo-1560066984-138dadb4c035?w=400&h=250&fit=crop",
-    "Маникюр": "https://images.unsplash.com/photo-1604654894610-df63bc536371?w=400&h=250&fit=crop",
-    "Косметология": "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=400&h=250&fit=crop",
-    "Ресницы и брови": "https://images.unsplash.com/photo-1633465631144-aa321b66d44a?w=400&h=250&fit=crop",
+  // Картинка категории = картинка первой услуги в этой категории
+  const categoryImage = (cat: string) => {
+    const first = services.find((s) => s.category === cat);
+    return first?.image || "";
   };
 
   // Загрузка
@@ -108,7 +106,7 @@ export default function HomePage() {
             className="group relative overflow-hidden rounded-2xl aspect-[4/3] shadow-md hover:shadow-xl transition-all duration-300"
           >
             <img
-              src={categoryIcons[cat]}
+              src={categoryImage(cat)}
               alt={cat}
               className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
             />
