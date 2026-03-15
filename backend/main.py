@@ -16,7 +16,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
 
 from database import get_db, init_db
@@ -25,6 +26,20 @@ from sms import send_booking_confirmation, send_booking_cancelled, check_balance
 load_dotenv()
 
 app = FastAPI(title="Slotify API", version="1.0.0")
+
+
+# --- Middleware: /api/* → /* (фронтенд обращается к /api/services, бэкенд слушает /services) ---
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class StripApiPrefixMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        if request.url.path.startswith("/api/"):
+            # Убираем /api из пути
+            request.scope["path"] = request.url.path[4:]  # "/api/services" → "/services"
+        return await call_next(request)
+
+app.add_middleware(StripApiPrefixMiddleware)
+
 
 # --- CORS (разрешаем фронтенду обращаться к API) ---
 app.add_middleware(
@@ -948,3 +963,25 @@ def cancel_booking(booking_id: int, authorization: str | None = Header(default=N
     )
 
     return result
+
+
+# =============================================
+# Раздача React build (для продакшена)
+# Если папка build существует — отдаём статику и SPA fallback
+# =============================================
+
+BUILD_DIR = Path(__file__).parent.parent / "build"
+
+if BUILD_DIR.exists():
+    # Статические файлы (JS, CSS, изображения)
+    app.mount("/static", StaticFiles(directory=BUILD_DIR / "static"), name="static")
+
+    # SPA fallback — все остальные пути отдают index.html
+    @app.get("/{full_path:path}")
+    def serve_spa(full_path: str):
+        # Если запрашивается конкретный файл из build — отдаём его
+        file_path = BUILD_DIR / full_path
+        if full_path and file_path.exists() and file_path.is_file():
+            return FileResponse(file_path)
+        # Иначе — index.html (React Router разберётся)
+        return FileResponse(BUILD_DIR / "index.html")
