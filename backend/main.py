@@ -13,6 +13,7 @@ from datetime import date, datetime
 
 from pathlib import Path
 
+import sentry_sdk
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,6 +25,15 @@ from database import get_db, init_db
 from sms import send_booking_confirmation, send_booking_cancelled, check_balance
 
 load_dotenv()
+
+# --- Sentry: отслеживание ошибок бэкенда ---
+SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+if SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        traces_sample_rate=0.2,
+        send_default_pii=False,
+    )
 
 app = FastAPI(title="Slotify API", version="1.0.0")
 
@@ -48,6 +58,7 @@ app.add_middleware(
         os.getenv("FRONTEND_URL", "http://localhost:3000"),
         "http://localhost:8001",
         "http://127.0.0.1:8001",
+        "https://slotify-apy.onrender.com",
     ],
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["Content-Type", "Authorization"],
