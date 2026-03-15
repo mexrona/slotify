@@ -3,7 +3,7 @@
 // Табы: Предстоящие / Прошедшие
 // =============================================
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { type Service, type Master } from "../data/mock";
 import { PageWrapper, BackButton } from "../components/Layout";
@@ -29,7 +29,7 @@ export default function MyBookingsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
-  const loadBookings = () => {
+  const loadBookings = useCallback(() => {
     setLoading(true);
     setError(false);
 
@@ -48,9 +48,9 @@ export default function MyBookingsPage() {
         setError(true);
         setLoading(false);
       });
-  };
+  }, [token]);
 
-  useEffect(() => { loadBookings(); }, [token]);
+  useEffect(() => { loadBookings(); }, [loadBookings]);
 
   const filtered = bookings.filter((b) =>
     tab === "upcoming" ? b.status === "upcoming" : b.status === "past"
