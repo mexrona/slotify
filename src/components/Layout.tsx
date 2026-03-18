@@ -19,7 +19,7 @@ export function Header() {
           </div>
           <span className="text-2xl font-extrabold tracking-tight">Slotify</span>
         </Link>
-        {user && (
+        {user ? (
           <div className="flex items-center gap-3">
             {user.role === "admin" && (
               <Link
@@ -43,6 +43,13 @@ export function Header() {
               Выйти
             </button>
           </div>
+        ) : (
+          <Link
+            to="/login"
+            className="bg-white/15 backdrop-blur-sm border border-white/25 text-white px-5 py-2 rounded-xl font-medium hover:bg-white/25 transition-all duration-200"
+          >
+            Зарегистрироваться
+          </Link>
         )}
       </div>
     </header>
