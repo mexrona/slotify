@@ -162,7 +162,6 @@ export function MasterPage() {
 export function DateTimePage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { token } = useAuth();
   const serviceId = searchParams.get("service");
   const masterId = searchParams.get("master");
 
@@ -186,9 +185,7 @@ export function DateTimePage() {
     setSlotsError(false);
     setSelectedTime(null);
 
-    fetch(`/api/slots?master_id=${masterId}&date=${selectedDate}`, {
-      headers: authHeaders(token),
-    })
+    fetch(`/api/slots?master_id=${masterId}&date=${selectedDate}`)
       .then((r) => { if (!r.ok) throw new Error(); return r.json(); })
       .then((data) => {
         setSlots(data);
@@ -198,7 +195,7 @@ export function DateTimePage() {
         setSlotsError(true);
         setSlotsLoading(false);
       });
-  }, [selectedDate, masterId, token]);
+  }, [selectedDate, masterId]);
 
   const formatDate = (d: Date) => {
     const days = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];

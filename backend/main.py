@@ -841,13 +841,10 @@ def delete_master(master_id: int, authorization: str | None = Header(default=Non
 def get_slots(
     master_id: int = Query(..., description="ID мастера"),
     date_param: str = Query(..., alias="date", description="Дата в формате YYYY-MM-DD"),
-    authorization: str | None = Header(default=None),
 ):
     """Доступные слоты для мастера на дату.
-    Требует авторизацию.
     Генерирует слоты 9:00–19:00 с шагом 30 минут.
     """
-    require_auth(authorization)
 
     # Валидация даты
     try:
