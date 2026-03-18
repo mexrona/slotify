@@ -4,10 +4,12 @@
 // =============================================
 
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
-import { PageWrapper } from "../components/Layout";
+import { PageWrapper, BackButton } from "../components/Layout";
 
 export default function AuthPage() {
+  const navigate = useNavigate();
   const { login, register } = useAuth();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [submitting, setSubmitting] = useState(false);
@@ -96,6 +98,7 @@ export default function AuthPage() {
 
   return (
     <PageWrapper>
+      <BackButton onClick={() => navigate(-1)} />
       <div className="max-w-md mx-auto">
         <h1 className="text-2xl font-bold text-gray-800 mb-2 text-center">
           {mode === "login" ? "Вход в Slotify" : "Регистрация"}
