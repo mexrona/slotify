@@ -44,12 +44,20 @@ export function Header() {
             </button>
           </div>
         ) : (
-          <Link
-            to="/login"
-            className="bg-white/15 backdrop-blur-sm border border-white/25 text-white px-5 py-2 rounded-xl font-medium hover:bg-white/25 transition-all duration-200"
-          >
-            Зарегистрироваться
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link
+              to="/login"
+              className="text-sm text-white/70 hover:text-white transition-colors font-medium"
+            >
+              Войти
+            </Link>
+            <Link
+              to="/login"
+              className="bg-white/15 backdrop-blur-sm border border-white/25 text-white px-5 py-2 rounded-xl font-medium hover:bg-white/25 transition-all duration-200"
+            >
+              Зарегистрироваться
+            </Link>
+          </div>
         )}
       </div>
     </header>
