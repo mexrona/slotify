@@ -81,11 +81,13 @@ function AppRoutes() {
       {/* Публичный — только для неавторизованных */}
       <Route path="/login" element={<PublicRoute><AuthPage /></PublicRoute>} />
 
+      {/* Публичные — доступны всем */}
+      <Route path="/" element={<HomePage />} />
+      <Route path="/services" element={<ServicesPage />} />
+      <Route path="/booking/master" element={<MasterPage />} />
+      <Route path="/booking/datetime" element={<DateTimePage />} />
+
       {/* Защищённые — только для авторизованных */}
-      <Route path="/" element={<PrivateRoute><HomePage /></PrivateRoute>} />
-      <Route path="/services" element={<PrivateRoute><ServicesPage /></PrivateRoute>} />
-      <Route path="/booking/master" element={<PrivateRoute><MasterPage /></PrivateRoute>} />
-      <Route path="/booking/datetime" element={<PrivateRoute><DateTimePage /></PrivateRoute>} />
       <Route path="/booking/confirm" element={<PrivateRoute><ConfirmPage /></PrivateRoute>} />
       <Route path="/booking/success" element={<PrivateRoute><SuccessPage /></PrivateRoute>} />
       <Route path="/my-bookings" element={<PrivateRoute><MyBookingsPage /></PrivateRoute>} />

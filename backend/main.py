@@ -4,9 +4,12 @@
 # =============================================
 
 import hashlib
+import json
+import logging
 import os
 import re
 import time
+import traceback
 import uuid
 from collections import defaultdict
 from datetime import date, datetime
@@ -35,6 +38,67 @@ if SENTRY_DSN:
         send_default_pii=False,
     )
 
+# =============================================
+# Структурированное логирование (JSON)
+# =============================================
+
+# Список полей, которые нельзя логировать (секреты, пароли)
+SENSITIVE_FIELDS = {"password", "password_hash", "token", "secret_key", "authorization", "sms_ru_api_key"}
+
+
+class JsonLogFormatter(logging.Formatter):
+    """Форматирует логи в JSON — удобно для Render, Sentry, Datadog и т.д."""
+    def format(self, record):
+        log_entry = {
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "level": record.levelname,
+            "message": record.getMessage(),
+        }
+        # Добавляем дополнительные поля (event, method, url и т.д.)
+        if hasattr(record, "extra_data"):
+            log_entry.update(record.extra_data)
+        # Добавляем стек ошибки, если есть
+        if record.exc_info and record.exc_info[0] is not None:
+            log_entry["traceback"] = traceback.format_exception(*record.exc_info)
+        return json.dumps(log_entry, ensure_ascii=False)
+
+
+# Настраиваем корневой логгер
+logger = logging.getLogger("slotify")
+logger.setLevel(logging.INFO)
+
+# JSON-обработчик для stdout (Render читает stdout)
+handler = logging.StreamHandler()
+handler.setFormatter(JsonLogFormatter())
+logger.addHandler(handler)
+
+# Убираем дублирование от uvicorn
+logger.propagate = False
+
+
+def log_event(message: str, **kwargs):
+    """Логирует бизнес-событие с дополнительными полями."""
+    # Фильтруем секреты
+    safe_data = {k: v for k, v in kwargs.items() if k.lower() not in SENSITIVE_FIELDS}
+    record = logger.makeRecord(
+        name="slotify", level=logging.INFO,
+        fn="", lno=0, msg=message,
+        args=(), exc_info=None,
+    )
+    record.extra_data = safe_data
+    logger.handle(record)
+
+
+def log_error(message: str, exc: Exception | None = None, **kwargs):
+    """Логирует ошибку с полным стеком."""
+    safe_data = {k: v for k, v in kwargs.items() if k.lower() not in SENSITIVE_FIELDS}
+    logger.error(
+        message,
+        exc_info=exc,
+        extra={"extra_data": safe_data} if safe_data else {},
+    )
+
+
 app = FastAPI(title="Slotify API", version="1.0.0")
 
 
@@ -44,10 +108,45 @@ from starlette.middleware.base import BaseHTTPMiddleware
 class StripApiPrefixMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         if request.url.path.startswith("/api/"):
-            # Убираем /api из пути
-            request.scope["path"] = request.url.path[4:]  # "/api/services" → "/services"
+            request.scope["path"] = request.url.path[4:]
         return await call_next(request)
 
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """Логирует все POST/PATCH/DELETE запросы: метод, URL, статус, время."""
+    async def dispatch(self, request, call_next):
+        # Логируем только изменяющие запросы
+        if request.method not in ("POST", "PATCH", "PUT", "DELETE"):
+            return await call_next(request)
+
+        start = time.time()
+        status_code = 500  # по умолчанию — ошибка
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            return response
+        except Exception as exc:
+            log_error(
+                "Необработанная ошибка в запросе",
+                exc=exc,
+                method=request.method,
+                url=str(request.url.path),
+                client_ip=request.client.host if request.client else "unknown",
+            )
+            raise
+        finally:
+            duration_ms = round((time.time() - start) * 1000)
+            log_event(
+                "request",
+                method=request.method,
+                url=str(request.url.path),
+                status=status_code,
+                duration_ms=duration_ms,
+                client_ip=request.client.host if request.client else "unknown",
+            )
+
+# Порядок важен: StripApiPrefix должен быть ближе к приложению
+app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(StripApiPrefixMiddleware)
 
 
@@ -90,6 +189,12 @@ def check_rate_limit(request: Request):
         )
 
     _rate_limit_store[ip].append(now)
+
+
+@app.get("/health")
+def health_check():
+    """Проверка что сервис жив (для UptimeRobot и Render)."""
+    return {"status": "ok"}
 
 
 @app.post("/auth/reset-rate-limit")
@@ -465,6 +570,8 @@ create_admin()
 # Проверяем баланс SMS.ru при запуске
 check_balance()
 
+log_event("app_started", event="startup", version="1.0.0")
+
 
 # =============================================
 # Роуты: Авторизация
@@ -496,6 +603,8 @@ def register(data: UserRegister, request: Request):
 
     user = row_to_dict(conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone())
     conn.close()
+
+    log_event("user_registered", event="register", user_id=user_id, email=data.email)
     return {**user, "token": token}
 
 
@@ -508,10 +617,12 @@ def login(data: UserLogin, request: Request):
     user = conn.execute("SELECT * FROM users WHERE email = ?", (data.email,)).fetchone()
     if not user:
         conn.close()
+        log_event("login_failed", event="login_fail", email=data.email, reason="user_not_found")
         raise HTTPException(status_code=401, detail="Неверный email или пароль")
 
     if dict(user)["password_hash"] != hash_password(data.password):
         conn.close()
+        log_event("login_failed", event="login_fail", email=data.email, reason="wrong_password")
         raise HTTPException(status_code=401, detail="Неверный email или пароль")
 
     token = uuid.uuid4().hex
@@ -519,6 +630,8 @@ def login(data: UserLogin, request: Request):
     conn.commit()
     result = {**dict(user), "token": token}
     conn.close()
+
+    log_event("user_logged_in", event="login", user_id=user["id"], email=data.email)
     return result
 
 
@@ -567,6 +680,7 @@ def create_service(data: ServiceCreate, authorization: str | None = Header(defau
     conn.commit()
     service = get_service_dict(conn, cur.lastrowid)
     conn.close()
+    log_event("service_created", event="admin_create_service", service_id=cur.lastrowid, name=data.name)
     return service
 
 
@@ -607,6 +721,7 @@ def delete_service(service_id: int, authorization: str | None = Header(default=N
     conn.execute("DELETE FROM services WHERE id = ?", (service_id,))
     conn.commit()
     conn.close()
+    log_event("service_deleted", event="admin_delete_service", service_id=service_id)
 
 
 # =============================================
@@ -665,6 +780,7 @@ def create_master(data: MasterCreate, authorization: str | None = Header(default
     conn.commit()
     master = get_master_dict(conn, master_id)
     conn.close()
+    log_event("master_created", event="admin_create_master", master_id=master_id, name=data.name)
     return master
 
 
@@ -714,6 +830,7 @@ def delete_master(master_id: int, authorization: str | None = Header(default=Non
     conn.execute("DELETE FROM masters WHERE id = ?", (master_id,))
     conn.commit()
     conn.close()
+    log_event("master_deleted", event="admin_delete_master", master_id=master_id)
 
 
 # =============================================
@@ -842,6 +959,13 @@ def create_booking(data: BookingCreate, authorization: str | None = Header(defau
     result = make_booking_out(conn, booking)
     conn.close()
 
+    log_event(
+        "booking_created", event="booking_create",
+        booking_id=cur.lastrowid, user_id=user["id"],
+        service_id=data.service_id, master_id=data.master_id,
+        date=data.date, time=data.time,
+    )
+
     # SMS-подтверждение (не блокирует ответ при ошибке)
     service_dict = result.get("service")
     master_dict = result.get("master")
@@ -963,6 +1087,12 @@ def cancel_booking(booking_id: int, authorization: str | None = Header(default=N
     booking["master_id"] = booking["master_id"] or 0
     result = make_booking_out(conn, booking)
     conn.close()
+
+    log_event(
+        "booking_cancelled", event="booking_cancel",
+        booking_id=booking_id, user_id=user["id"],
+        date=booking["date"], time=booking["time"],
+    )
 
     # SMS об отмене (не блокирует ответ при ошибке)
     service_dict = result.get("service")
