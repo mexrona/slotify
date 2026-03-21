@@ -12,7 +12,10 @@ import time
 import traceback
 import uuid
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timezone, timedelta
+
+# Часовой пояс Москвы (UTC+3)
+MSK = timezone(timedelta(hours=3))
 
 from pathlib import Path
 
@@ -848,12 +851,26 @@ def get_slots(
 
     # Валидация даты
     try:
-        date.fromisoformat(date_param)
+        slot_date = date.fromisoformat(date_param)
     except ValueError:
         raise HTTPException(status_code=400, detail="Дата должна быть в формате YYYY-MM-DD")
 
     if master_id < 0:
         raise HTTPException(status_code=400, detail="ID мастера не может быть отрицательным")
+
+    now = datetime.now(timezone.utc).astimezone(MSK)
+    today = now.date()
+    is_past = slot_date < today
+    is_today = slot_date == today
+
+    # Если дата в прошлом — все слоты недоступны
+    if is_past:
+        slots: list[dict] = []
+        for hour in range(9, 20):
+            slots.append({"time": f"{hour}:00", "available": False})
+            if hour < 19:
+                slots.append({"time": f"{hour}:30", "available": False})
+        return slots
 
     conn = get_db()
     # master_id=0 означает «любой мастер» — показываем все слоты
@@ -870,11 +887,8 @@ def get_slots(
     conn.close()
     busy_times = {r["time"] for r in rows}
 
-    # Если дата сегодня — прошедшие слоты недоступны
-    is_today = date.fromisoformat(date_param) == date.today()
-    now = datetime.now()
-
-    slots: list[dict] = []
+    # Генерируем слоты, для сегодня — прошедшие недоступны
+    slots = []
     for hour in range(9, 20):
         time_str = f"{hour}:00"
         past = is_today and (hour < now.hour or (hour == now.hour and 0 <= now.minute))
@@ -910,11 +924,11 @@ def create_booking(data: BookingCreate, authorization: str | None = Header(defau
     # Проверяем, что дата и время не в прошлом
     try:
         booking_date = date.fromisoformat(data.date)
-        if booking_date < date.today():
+        if booking_date < datetime.now(MSK).date():
             conn.close()
             raise HTTPException(status_code=400, detail="Нельзя записаться на прошедшую дату")
-        if booking_date == date.today():
-            now = datetime.now()
+        if booking_date == datetime.now(MSK).date():
+            now = datetime.now(timezone.utc).astimezone(MSK)
             hours, minutes = map(int, data.time.split(":"))
             if hours < now.hour or (hours == now.hour and minutes <= now.minute):
                 conn.close()
