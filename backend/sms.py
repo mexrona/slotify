@@ -121,3 +121,10 @@ def send_booking_cancelled(phone: str, service_name: str, date: str, time: str) 
     """SMS об отмене записи."""
     message = f"Slotify: отмена {service_name}, {date} {time}"
     return send_sms(phone, message)
+
+
+def send_booking_reminder(phone: str, service_name: str, date: str, time: str, master_name: str | None) -> bool:
+    """SMS-напоминание о записи за день."""
+    master = master_name or "любой"
+    message = f"Slotify: напоминаем, {date} {time}, {service_name}, м. {master}"
+    return send_sms(phone, message)

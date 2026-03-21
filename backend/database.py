@@ -86,6 +86,7 @@ def init_db():
             client_phone TEXT    NOT NULL,
             status       TEXT    NOT NULL DEFAULT 'upcoming'
                                  CHECK(status IN ('upcoming', 'past', 'cancelled')),
+            reminder_sent INTEGER NOT NULL DEFAULT 0,
             created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
         );
 
@@ -94,5 +95,11 @@ def init_db():
             ON bookings(master_id, date, time)
             WHERE status != 'cancelled' AND master_id IS NOT NULL;
     """)
+
+    # Миграция: добавляем колонку reminder_sent, если её ещё нет
+    columns = [row[1] for row in conn.execute("PRAGMA table_info(bookings)").fetchall()]
+    if "reminder_sent" not in columns:
+        conn.execute("ALTER TABLE bookings ADD COLUMN reminder_sent INTEGER NOT NULL DEFAULT 0")
+
     conn.commit()
     conn.close()

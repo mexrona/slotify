@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 import traceback
 import uuid
@@ -28,7 +29,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
 
 from database import get_db, init_db
-from sms import send_booking_confirmation, send_booking_cancelled, check_balance
+from sms import send_booking_confirmation, send_booking_cancelled, send_booking_reminder, check_balance
 
 load_dotenv()
 
@@ -574,6 +575,58 @@ create_admin()
 check_balance()
 
 log_event("app_started", event="startup", version="1.0.0")
+
+
+# =============================================
+# Фоновая задача: SMS-напоминания за день до записи
+# Проверяет каждые 30 минут, отправляет один раз
+# =============================================
+
+def _send_reminders():
+    """Находит записи на завтра и отправляет SMS-напоминания."""
+    now = datetime.now(timezone.utc).astimezone(MSK)
+    tomorrow = (now + timedelta(days=1)).strftime("%Y-%m-%d")
+
+    conn = get_db()
+    # Берём записи на завтра, которым ещё не отправляли напоминание
+    rows = conn.execute(
+        "SELECT b.id, b.client_phone, b.date, b.time, b.reminder_sent, "
+        "s.name AS service_name, m.name AS master_name "
+        "FROM bookings b "
+        "JOIN services s ON b.service_id = s.id "
+        "LEFT JOIN masters m ON b.master_id = m.id "
+        "WHERE b.date = ? AND b.status = 'upcoming' AND b.reminder_sent = 0",
+        (tomorrow,),
+    ).fetchall()
+
+    for row in rows:
+        send_booking_reminder(
+            phone=row["client_phone"],
+            service_name=row["service_name"],
+            date=row["date"],
+            time=row["time"],
+            master_name=row["master_name"],
+        )
+        conn.execute("UPDATE bookings SET reminder_sent = 1 WHERE id = ?", (row["id"],))
+
+    conn.commit()
+    conn.close()
+    logger.info("Напоминания: проверено на %s, отправлено %d", tomorrow, len(rows))
+
+
+def _reminder_loop():
+    """Фоновый цикл — запускает проверку каждые 30 минут."""
+    while True:
+        try:
+            _send_reminders()
+        except Exception as e:
+            logger.error("Ошибка в цикле напоминаний: %s", e)
+        time.sleep(1800)  # 30 минут
+
+
+# Запускаем фоновый поток (daemon — завершится вместе с сервером)
+_reminder_thread = threading.Thread(target=_reminder_loop, daemon=True)
+_reminder_thread.start()
 
 
 # =============================================
