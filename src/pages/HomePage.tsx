@@ -125,8 +125,9 @@ export default function HomePage() {
       <h2 className="text-2xl font-bold text-gray-800 mb-5">Наши мастера</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-12">
         {masters.map((master) => (
-          <div
+          <Link
             key={master.id}
+            to={`/masters/${master.id}`}
             className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-lg transition-shadow duration-300"
           >
             <div className="flex items-center gap-4 p-5">
@@ -156,7 +157,7 @@ export default function HomePage() {
                 />
               ))}
             </div>
-          </div>
+          </Link>
         ))}
       </div>
     </PageWrapper>

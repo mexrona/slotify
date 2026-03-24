@@ -8,6 +8,9 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { type Service } from "../data/mock";
 import { PageWrapper, BackButton } from "../components/Layout";
 
+const FALLBACK_SERVICE_IMAGE =
+  "https://via.placeholder.com/640x420?text=No+Image";
+
 export default function ServicesPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -128,6 +131,12 @@ export default function ServicesPage() {
             <img
               src={service.image}
               alt={service.name}
+              onError={(e) => {
+                const img = e.currentTarget;
+                if (img.src !== FALLBACK_SERVICE_IMAGE) {
+                  img.src = FALLBACK_SERVICE_IMAGE;
+                }
+              }}
               className="w-full sm:w-40 h-32 sm:h-auto object-cover"
             />
             {/* Информация */}

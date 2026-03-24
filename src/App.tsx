@@ -9,6 +9,7 @@ import { AuthProvider, useAuth } from "./auth/AuthContext";
 import AuthPage from "./pages/AuthPage";
 import HomePage from "./pages/HomePage";
 import ServicesPage from "./pages/ServicesPage";
+import MasterProfilePage from "./pages/MasterProfilePage";
 import { MasterPage, DateTimePage, ConfirmPage } from "./pages/BookingFlow";
 import SuccessPage from "./pages/SuccessPage";
 import MyBookingsPage from "./pages/MyBookingsPage";
@@ -83,6 +84,7 @@ function AppRoutes() {
 
       {/* Публичные — доступны всем */}
       <Route path="/" element={<HomePage />} />
+      <Route path="/masters/:id" element={<MasterProfilePage />} />
       <Route path="/services" element={<ServicesPage />} />
       <Route path="/booking/master" element={<MasterPage />} />
       <Route path="/booking/datetime" element={<DateTimePage />} />
