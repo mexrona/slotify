@@ -3,6 +3,7 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: "./e2e",
   timeout: 30000,
+  globalSetup: "./e2e/global-setup.ts",
   use: {
     baseURL: "http://localhost:3000",
     headless: true,

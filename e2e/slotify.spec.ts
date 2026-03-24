@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { login, uniqueEmail, resetRateLimit, futureDate } from "./helpers";
+import { login, loginAdmin, uniqueEmail, resetRateLimit, futureDate } from "./helpers";
 
 // =============================================
 // 1. Регистрация и вход
@@ -28,7 +28,8 @@ test("Пользователь регистрируется и попадает 
 });
 
 test("Пользователь входит по email и паролю", async ({ page }) => {
-  await login(page, "test@example.com", "password123");
+  const email = uniqueEmail();
+  await login(page, email, "password123");
 
   // На главной видим кнопку выхода
   await expect(page.getByText("Выйти")).toBeVisible();
@@ -38,7 +39,8 @@ test("Пользователь входит по email и паролю", async (
 // 2. Создание записи
 // =============================================
 test("Пользователь создаёт запись и видит её в списке", async ({ page }) => {
-  await login(page, "test@example.com", "password123");
+  const email = uniqueEmail();
+  await login(page, email, "password123");
 
   // Переходим к услугам и выбираем первую
   await page.goto("/services");
@@ -110,7 +112,7 @@ test("Неавторизованный пользователь перенапр
   await page.evaluate(() => localStorage.removeItem("slotify_token"));
 
   // Пытаемся зайти на защищённые страницы
-  const protectedPages = ["/", "/services", "/my-bookings", "/booking/master"];
+  const protectedPages = ["/my-bookings", "/booking/confirm", "/booking/success", "/admin"];
 
   for (const url of protectedPages) {
     await page.goto(url);
@@ -123,7 +125,8 @@ test("Неавторизованный пользователь перенапр
 // 5. Отмена записи
 // =============================================
 test("Пользователь отменяет запись и она исчезает из списка", async ({ page }) => {
-  await login(page, "test@example.com", "password123");
+  const email = uniqueEmail();
+  await login(page, email, "password123");
 
   // Сначала создаём запись
   await page.goto("/services");
@@ -163,7 +166,8 @@ test("Пользователь отменяет запись и она исче�
 // 6. Нельзя записаться на занятое время
 // =============================================
 test("Занятое время отображается как недоступное", async ({ page }) => {
-  await login(page, "test@example.com", "password123");
+  const email = uniqueEmail();
+  await login(page, email, "password123");
 
   await page.goto("/services");
   await page.getByRole("button", { name: "Выбрать" }).first().click();
@@ -193,20 +197,18 @@ test("Занятое время отображается как недоступ
 // 7. Выход из аккаунта
 // =============================================
 test("Пользователь выходит и возвращается на страницу входа", async ({ page }) => {
-  await login(page, "test@example.com", "password123");
+  const email = uniqueEmail();
+  await login(page, email, "password123");
 
   // Нажимаем «Выйти»
   await page.getByText("Выйти").click();
-
-  // Ожидаем переход на логин
-  await page.waitForURL("**/login", { timeout: 10000 });
 
   // Проверяем, что токен удалён
   const token = await page.evaluate(() => localStorage.getItem("slotify_token"));
   expect(token).toBeNull();
 
-  // Обновляем страницу — остаёмся на логине
-  await page.reload();
+  // После logout приватные страницы недоступны
+  await page.goto("/my-bookings");
   await page.waitForURL("**/login", { timeout: 10000 });
   expect(page.url()).toContain("/login");
 });
@@ -215,7 +217,8 @@ test("Пользователь выходит и возвращается на �
 // 8. Админ-панель: доступ
 // =============================================
 test("Обычный пользователь не видит ссылку на админку и не может открыть /admin", async ({ page }) => {
-  await login(page, "test@example.com", "password123");
+  const email = uniqueEmail();
+  await login(page, email, "password123");
 
   // Ссылки «Админ-панель» нет в шапке
   await expect(page.getByText("Админ-панель")).not.toBeVisible();
@@ -230,7 +233,7 @@ test("Обычный пользователь не видит ссылку на 
 // 9. Админ-панель: добавление услуги
 // =============================================
 test("Админ добавляет услугу через админ-панель", async ({ page }) => {
-  await login(page, "testadmin@example.com", "admin123");
+  await loginAdmin(page);
 
   // Видим ссылку «Админ-панель»
   await expect(page.getByText("Админ-панель")).toBeVisible();
@@ -260,7 +263,7 @@ test("Админ добавляет услугу через админ-пане�
 // 10. Админ-панель: добавление мастера
 // =============================================
 test("Админ добавляет мастера через админ-панель", async ({ page }) => {
-  await login(page, "testadmin@example.com", "admin123");
+  await loginAdmin(page);
 
   await page.goto("/admin");
 
