@@ -288,3 +288,36 @@ test("Админ добавляет мастера через админ-пан�
   // Мастер появился в списке
   await expect(page.getByText(testName)).toBeVisible({ timeout: 5000 });
 });
+
+// =============================================
+// 11. Страница мастера
+// =============================================
+test("Пользователь открывает страницу мастера с главной", async ({ page }) => {
+  await page.goto("/");
+
+  const firstMasterLink = page.locator('a[href^="/masters/"]').first();
+  await expect(firstMasterLink).toBeVisible();
+
+  const masterName = (await firstMasterLink.locator("p.font-bold").first().innerText()).trim();
+
+  await firstMasterLink.click();
+
+  await expect(page).toHaveURL(/\/masters\/\d+$/);
+  await expect(page.getByRole("heading", { name: masterName })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Портфолио" })).toBeVisible();
+});
+
+test("Пользователь открывает и закрывает увеличенное фото мастера", async ({ page }) => {
+  await page.goto("/");
+  await page.locator('a[href^="/masters/"]').first().click();
+
+  const openPhotoButton = page.locator('button[aria-label^="Открыть фото"]').first();
+  await expect(openPhotoButton).toBeVisible();
+  await openPhotoButton.click();
+
+  const enlargedImage = page.getByAltText("Увеличенное фото");
+  await expect(enlargedImage).toBeVisible();
+
+  await page.getByRole("button", { name: "Закрыть фото" }).click();
+  await expect(enlargedImage).toBeHidden();
+});

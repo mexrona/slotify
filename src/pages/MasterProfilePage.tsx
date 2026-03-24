@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { type Master } from "../data/mock";
 import { BackButton, PageWrapper } from "../components/Layout";
@@ -12,7 +12,7 @@ export default function MasterProfilePage() {
   const [error, setError] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
-  const loadMaster = () => {
+  const loadMaster = useCallback(() => {
     setLoading(true);
     setError(false);
 
@@ -30,12 +30,11 @@ export default function MasterProfilePage() {
         setError(true);
         setLoading(false);
       });
-  };
+  }, [id]);
 
   useEffect(() => {
     loadMaster();
-    // id is required to reload page when route param changes
-  }, [id]);
+  }, [loadMaster]);
 
   if (loading) {
     return (
