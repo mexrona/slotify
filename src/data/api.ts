@@ -33,18 +33,21 @@ function getMockResponse(path: string): unknown {
 
 export async function fetchJsonWithFallback<T>(path: string, init?: RequestInit): Promise<T> {
   const method = init?.method?.toUpperCase() ?? "GET";
+  const fallbackPath = path.startsWith("http")
+    ? `${new URL(path).pathname}${new URL(path).search}`
+    : path;
 
   if (method !== "GET") {
     const response = await fetch(path, init);
     if (!response.ok) throw new Error("Request failed");
-    return response.json() as Promise<T>;
+    return (await response.json()) as T;
   }
 
   try {
     const response = await fetch(path, init);
     if (!response.ok) throw new Error("Request failed");
-    return response.json() as Promise<T>;
+    return (await response.json()) as T;
   } catch {
-    return getMockResponse(path) as T;
+    return getMockResponse(fallbackPath) as T;
   }
 }
