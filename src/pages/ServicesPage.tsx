@@ -6,6 +6,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { type Service } from "../data/mock";
+import { fetchJsonWithFallback } from "../data/api";
 import { PageWrapper, BackButton } from "../components/Layout";
 
 const FALLBACK_SERVICE_IMAGE =
@@ -27,11 +28,7 @@ export default function ServicesPage() {
   const loadData = () => {
     setLoading(true);
     setError(false);
-    fetch("/api/services")
-      .then((res) => {
-        if (!res.ok) throw new Error("Ошибка загрузки");
-        return res.json();
-      })
+    fetchJsonWithFallback<Service[]>("/api/services")
       .then((services) => {
         setData(services);
         setLoading(false);

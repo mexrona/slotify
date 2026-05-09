@@ -6,6 +6,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { type Service, type Master } from "../data/mock";
+import { fetchJsonWithFallback } from "../data/api";
 import { PageWrapper } from "../components/Layout";
 
 export default function HomePage() {
@@ -19,8 +20,8 @@ export default function HomePage() {
     setError(false);
 
     Promise.all([
-      fetch("/api/services").then((r) => { if (!r.ok) throw new Error(); return r.json(); }),
-      fetch("/api/masters").then((r) => { if (!r.ok) throw new Error(); return r.json(); }),
+      fetchJsonWithFallback<Service[]>("/api/services"),
+      fetchJsonWithFallback<Master[]>("/api/masters"),
     ])
       .then(([servicesData, mastersData]) => {
         setServices(servicesData);

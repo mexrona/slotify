@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { type Master } from "../data/mock";
+import { fetchJsonWithFallback } from "../data/api";
 import { BackButton, PageWrapper } from "../components/Layout";
 
 export default function MasterProfilePage() {
@@ -16,11 +17,7 @@ export default function MasterProfilePage() {
     setLoading(true);
     setError(false);
 
-    fetch("/api/masters")
-      .then((res) => {
-        if (!res.ok) throw new Error("Ошибка загрузки");
-        return res.json();
-      })
+    fetchJsonWithFallback<Master[]>("/api/masters")
       .then((masters: Master[]) => {
         const found = masters.find((m) => String(m.id) === String(id));
         setMaster(found ?? null);

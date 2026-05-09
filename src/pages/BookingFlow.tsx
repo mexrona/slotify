@@ -6,6 +6,7 @@
 import { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { type Service, type Master, type TimeSlot } from "../data/mock";
+import { fetchJsonWithFallback } from "../data/api";
 import { PageWrapper, BookingSteps, BackButton } from "../components/Layout";
 import { useAuth } from "../auth/AuthContext";
 
@@ -32,8 +33,8 @@ export function MasterPage() {
     setError(false);
 
     Promise.all([
-      fetch(`/api/services/${serviceId}`).then((r) => { if (!r.ok) throw new Error(); return r.json(); }),
-      fetch("/api/masters").then((r) => { if (!r.ok) throw new Error(); return r.json(); }),
+      fetchJsonWithFallback<Service>(`/api/services/${serviceId}`),
+      fetchJsonWithFallback<Master[]>("/api/masters"),
     ])
       .then(([serviceData, mastersData]) => {
         setService(serviceData);
@@ -185,8 +186,7 @@ export function DateTimePage() {
     setSlotsError(false);
     setSelectedTime(null);
 
-    fetch(`/api/slots?master_id=${masterId}&date=${selectedDate}`)
-      .then((r) => { if (!r.ok) throw new Error(); return r.json(); })
+    fetchJsonWithFallback<TimeSlot[]>(`/api/slots?master_id=${masterId}&date=${selectedDate}`)
       .then((data) => {
         setSlots(data);
         setSlotsLoading(false);
@@ -319,14 +319,13 @@ export function ConfirmPage() {
 
   // Загружаем данные об услуге и мастере
   useEffect(() => {
-    const fetches = [
-      fetch(`/api/services/${serviceId}`).then((r) => r.ok ? r.json() : null),
-    ];
-    if (masterId > 0) {
-      fetches.push(fetch(`/api/masters/${masterId}`).then((r) => r.ok ? r.json() : null));
-    }
+    const servicePromise = fetchJsonWithFallback<Service>(`/api/services/${serviceId}`).catch(() => null);
+    const masterPromise =
+      masterId > 0
+        ? fetchJsonWithFallback<Master>(`/api/masters/${masterId}`).catch(() => null)
+        : Promise.resolve(null);
 
-    Promise.all(fetches)
+    Promise.all([servicePromise, masterPromise])
       .then(([serviceData, masterData]) => {
         setService(serviceData);
         setMaster(masterData || null);
